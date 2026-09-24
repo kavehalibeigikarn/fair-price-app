@@ -13,7 +13,7 @@ const state = { win: "3y", mode: "m24" };
     const s = en(String(v || ""));
     if (/مجانی|رایگان/.test(s)) return 0;
     if (/توافقی/.test(s)) return NaN;
-    let n = parseFloat(s.replace(/[٬,،\s]/g, "").replace(/[^\d.]/g, "")); if (!(n >= 0)) return NaN;
+    let n = parseFloat(s.replace(/[٫\/]/g, ".").replace(/[٬,،\s]/g, "").replace(/[^\d.]/g, "")); if (!(n >= 0)) return NaN;
     if (/میلیارد/.test(s)) n *= 1e9; else if (/میلیون/.test(s)) n *= 1e6;
     return n;
   }

@@ -29,60 +29,86 @@ function extractToken(text) {
   return m ? m[1] : null;
 }
 
-// ---------- Divar post JSON -> ad
+// ---------- Divar post JSON -> ad (robust: scans every title/value pair in the JSON, then the description)
+function walk(o, cb) { if (o && typeof o === "object") { cb(o); for (const k in o) walk(o[k], cb); } }
+function numFromText(txt, re) {                    // "رهن ۵۰۰ میلیون" / "اجاره: ۱۵ م" / "ودیعه ۱٫۵ میلیارد"
+  const m = en(txt).replace(/[٫\/](?=\d)/g, ".").match(re); if (!m) return NaN;
+  let n = parseFloat(m[1].replace(/[٬,،\s]/g, "")); if (!(n >= 0)) return NaN;
+  const u = m[2] || "";
+  if (/میلیارد/.test(u)) n *= 1e9; else if (/میلیون|^م$/.test(u)) n *= 1e6; else if (n < 5000) n *= 1e6;   // bare small number = million
+  return n;
+}
 function parsePost(P) {
-  const ad = { title: "", type: null, ppm: NaN, total: NaN, area: null, year: null, floor: null, deposit: NaN, rent: 0,
-               elevator: null, parking: null, warehouse: null, npark: 0, slug: "", hood: "", city: "", cat: "" };
+  const ad = { title: "", type: null, ppm: NaN, total: NaN, area: null, year: null, floor: null, deposit: NaN, rent: NaN,
+               elevator: null, parking: null, warehouse: null, npark: 0, slug: "", hood: "", city: "", src: "" };
   const W = P.webengage || {};
-  ad.slug = W.district || ""; ad.city = W.city || ""; ad.cat = W.category || W.cat_3 || "";
-  const wi = P.seo && P.seo.web_info; if (wi) { ad.hood = wi.district_persian || ""; ad.cityFa = wi.city_persian || ""; }
-  for (const s of P.sections || []) for (const w of s.widgets || []) {
-    const d = w.data || {};
-    if (s.section_name === "TITLE" && d.title && !ad.title) ad.title = d.title;
-    if (w.widget_type === "DESCRIPTION_ROW" && d.text) { const n = parkingCount(d.text); if (n) ad.npark = n; }
-    const items = (d.items || []).concat(d.title && "value" in d ? [d] : []);
-    for (const it of items) {
-      const k = (it.title || "").trim(), v = it.value;
-      if (/^قیمت هر متر/.test(k)) ad.ppm = NUM(String(v));
-      else if (/^قیمت کل/.test(k)) ad.total = money(v);
-      else if (/^ودیعه/.test(k)) { ad.type = "rent"; ad.deposit = money(v); }
-      else if (/^اجار/.test(k)) { const m = money(v); if (m >= 0) ad.rent = m; }
-      else if (/^متراژ/.test(k)) { const a = NUM(String(v)); if (a > 0) ad.area = a; }
-      else if (/^ساخت/.test(k)) { const y = NUM(String(v)); if (y > 1300 && y < 1500) ad.year = y; }
-      else if (/^طبقه/.test(k)) ad.floor = floorNum(v);
-      for (const [key, word] of [["elevator", "آسانسور"], ["parking", "پارکینگ"], ["warehouse", "انباری"]])
-        if (k.includes(word)) ad[key] = !(k.includes("ندارد") || it.available === false || it.disabled === true);
-    }
+  ad.slug = W.district || ""; ad.city = W.city || "";
+  const cat = String(W.category || W.cat_3 || W.cat3 || "");
+  const wi = P.seo && P.seo.web_info; if (wi) ad.hood = wi.district_persian || "";
+  let desc = "";
+  walk(P, o => {
+    if (o.widget_type === "DESCRIPTION_ROW" && o.data && o.data.text) desc += "\n" + o.data.text;
+    if (!ad.title && o.widget_type && /TITLE/.test(o.widget_type) && o.data && o.data.title) ad.title = o.data.title;
+    const k = String(o.title || o.label || o.key || "").trim(), v = o.value ?? o.subtitle ?? o.text;
+    if (!k || v === undefined || typeof v === "object") return;
+    if (/^قیمت هر متر/.test(k)) ad.ppm = NUM(String(v));
+    else if (/^قیمت کل|^قیمت$/.test(k)) ad.total = money(v);
+    else if (/^(ودیعه|رهن)/.test(k)) { ad.type = "rent"; const m = money(v); if (m >= 0) ad.deposit = m; }
+    else if (/^اجار/.test(k)) { ad.type = "rent"; const m = money(v); if (m >= 0) ad.rent = m; }
+    else if (/^متراژ/.test(k)) { const a = NUM(String(v)); if (a > 0) ad.area = a; }
+    else if (/^ساخت/.test(k)) { const y = NUM(String(v)); if (y > 1300 && y < 1500) ad.year = y; }
+    else if (/^طبقه/.test(k)) ad.floor = floorNum(v);
+  });
+  walk(P, o => {                                     // amenities rows: {title:"آسانسور"} / {title:"آسانسور ندارد"}
+    const k = String(o.title || ""); if (!k || k.length > 20) return;
+    for (const [key, word] of [["elevator", "آسانسور"], ["parking", "پارکینگ"], ["warehouse", "انباری"]])
+      if (k.includes(word)) ad[key] = !(k.includes("ندارد") || o.available === false || o.disabled === true);
+  });
+  const t = ad.title + " " + desc;
+  if (!ad.type) ad.type = /rent|اجاره|رهن/.test(cat + " " + ad.title) ? "rent" : /sell|فروش/.test(cat + " " + ad.title) || ad.ppm > 0 || ad.total > 0 ? "sale" : null;
+  if (!ad.type && /ودیعه|رهن|اجاره/.test(desc)) ad.type = "rent";
+  if (!ad.type && /(قیمت|فروش)/.test(desc)) ad.type = "sale";
+  if (ad.type === "rent") {                          // fall back to the description for missing numbers
+    if (!(ad.deposit >= 0)) { ad.deposit = numFromText(t, /(?:رهن|ودیعه)\s*(?:کامل)?\s*[:：]?\s*([\d.,٬]+)\s*(میلیارد|میلیون|م(?=\s|$))?/); if (ad.deposit >= 0) ad.src = "desc"; }
+    if (!(ad.rent >= 0)) { const r = numFromText(t, /اجاره(?:\s*ماهانه|\s*ماهیانه)?\s*[:：]?\s*([\d.,٬]+)\s*(میلیارد|میلیون|م(?=\s|$))?/); if (r >= 0) { ad.rent = r; ad.src = "desc"; } }
+    if (ad.deposit >= 0 && !(ad.rent >= 0)) ad.rent = 0;
+    if (ad.rent >= 0 && !(ad.deposit >= 0)) ad.deposit = 0;
   }
-  if (!ad.type && (ad.ppm > 0 || ad.total > 0)) ad.type = "sale";
-  if (ad.type === "sale" && !(ad.ppm > 0) && ad.total > 0 && ad.area > 0) ad.ppm = ad.total / ad.area;
+  if (ad.type === "sale") {
+    if (!(ad.ppm > 0) && ad.total > 0 && ad.area > 0) ad.ppm = ad.total / ad.area;
+    if (!(ad.ppm > 0) && ad.area > 0) { const tot = numFromText(t, /(?:قیمت|فی)\s*(?:کل)?\s*[:：]?\s*([\d.,٬]+)\s*(میلیارد|میلیون)/); if (tot > 1e8) { ad.ppm = tot / ad.area; ad.src = "desc"; } }
+  }
+  ad.npark = parkingCount(desc);
+  if (!ad.area) { const a = en(t).match(/(\d{2,4})\s*متر/); if (a) ad.area = +a[1]; }
   return ad;
 }
 
 // ---------- gauge (semicircle): zones below / fair / above, needle at the ad
 function gauge(lo, mid, hi, val, fmt) {
+  const known = val > 0;
   const min = mid * 0.6, max = mid * 1.5, cl = x => Math.max(min, Math.min(max, x));
   const ang = x => Math.PI * (1 - (cl(x) - min) / (max - min));          // 180deg (left) .. 0deg (right)
   const pt = (a, r) => [150 + r * Math.cos(a), 150 - r * Math.sin(a)];
   const arc = (a0, a1, col) => { const [x0, y0] = pt(a0, 110), [x1, y1] = pt(a1, 110);
     return `<path d="M${x0},${y0} A110,110 0 0 1 ${x1},${y1}" stroke="${col}" stroke-width="26" fill="none"/>`; };
-  const [nx, ny] = pt(ang(val), 92);
+  const [nx, ny] = pt(ang(known ? val : mid), 92);
   return `<svg viewBox="0 -14 300 190" role="img" aria-label="گیج قیمت منصفانه">
     ${arc(Math.PI, ang(lo), "var(--z1)")}${arc(ang(lo), ang(hi), "var(--z2)")}${arc(ang(hi), 0, "var(--z3)")}
-    <line x1="150" y1="150" x2="${nx}" y2="${ny}" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>
+    ${known ? `<line x1="150" y1="150" x2="${nx}" y2="${ny}" stroke="var(--ink)" stroke-width="4" stroke-linecap="round"/>` : ""}
     <circle cx="150" cy="150" r="8" fill="var(--ink)"/>
     <text x="30" y="172" font-size="11" fill="var(--muted)" text-anchor="middle">${fmt(min)}</text>
     <text x="150" y="4" font-size="12" fill="var(--muted)" text-anchor="middle">میانه ${fmt(mid)}</text>
     <text x="270" y="172" font-size="11" fill="var(--muted)" text-anchor="middle">${fmt(max)}</text></svg>`;
 }
 function verdict(val, f) {
+  if (!(val > 0)) return ["قیمت آگهی نامشخص است — ارزش منصفانه در پایین آمده", "fair"];
   const pct = Math.round((val / f.mid - 1) * 100);
   if (val < f.lo) return [`زیر رنج منصفانه — ${fa(Math.abs(pct))}٪ ارزان‌تر از میانه`, "below"];
   if (val > f.hi) return [`بالای رنج منصفانه — ${fa(pct)}٪ گران‌تر از میانه`, "above"];
   return ["در رنج منصفانه", "fair"];
 }
 const opts = (list, sel) => list.map(([v, n]) => `<option value="${v}"${String(v) === String(sel) ? " selected" : ""}>${n}</option>`).join("");
-const QOPT = [["", "نامشخص"], ["top", "عالی"], ["mid", "متوسط"], ["weak", "ضعیف"]];
+const QOPT = [["", "نامشخص"], ["top", "عالی"], ["good", "خوب"], ["mid", "متوسط"], ["weak", "ضعیف"], ["vweak", "خیلی ضعیف"]];
 
 // ---------- main
 let AD = null, TOKEN = null, FX = null;
@@ -96,7 +122,7 @@ async function analyze(text) {
     if (!r.ok) throw new Error(r.status === 404 ? "این آگهی حذف شده یا منقضی شده است." : "خطای دیوار: " + r.status);
     AD = parsePost(await r.json()); TOKEN = token;
   } catch (e) { out.innerHTML = `<p class="err">${e.message || "اتصال به دیوار برقرار نشد."}</p>`; return; }
-  if (!AD.type) { out.innerHTML = `<p class="err">این آگهی فروش یا اجاره آپارتمان نیست، یا قیمتش توافقی است.</p>`; return; }
+  if (!AD.type) { out.innerHTML = `<p class="err">نوع آگهی (فروش یا اجاره آپارتمان) تشخیص داده نشد.</p>`; return; }
   if (AD.city && AD.city !== "tehran") { out.innerHTML = `<p class="err">فعلاً فقط آگهی‌های شهر تهران پشتیبانی می‌شوند.</p>`; return; }
   FX = FX || await getRate();
   render();
@@ -117,12 +143,15 @@ function render() {
     const manual = store.get("fxManual", 0), rate = manual || (FX && FX[state.mode]) || 0;
     if (!(rate > 0)) { $("#report").innerHTML = head + `<p class="err">نرخ دلار دریافت نشد؛ در تنظیمات دستی وارد کنید.</p>`; return; }
     const f = fairRange(ad, dist, state.win, q), usd = ad.ppm / rate, [vt, vc] = verdict(usd, f);
+    const rr = store.get("rentRate", DFP_RENT.rate), rentMid = ad.area > 0 ? rentRange(ad, q).mid * ad.area : NaN;
     body = `${gauge(f.lo, f.mid, f.hi, usd, x => fa(x * rate / 1e6))}
       <p class="verdict ${vc}">${vt}</p>
+      <div class="fair"><span>ارزش منصفانه</span><b>${ad.area ? B(f.mid * rate * ad.area) + " میلیارد" : M(f.mid * rate) + " میلیون هر متر"}</b>
+        <small>${ad.area ? "هر متر " + M(f.mid * rate) + " میلیون" : ""}</small></div>
       <div class="cards">
-        <div><span>رنج منصفانه هر متر</span><b>${M(f.lo * rate)} تا ${M(f.hi * rate)} میلیون</b></div>
-        <div><span>قیمت آگهی هر متر</span><b>${M(ad.ppm)} میلیون</b></div>
-        ${ad.area ? `<div><span>ارزش منصفانه کل</span><b>${B(f.lo * rate * ad.area)} تا ${B(f.hi * rate * ad.area)} میلیارد</b></div>` : ""}
+        <div><span>قیمت آگهی</span><b>${ad.ppm > 0 ? (ad.area ? B(ad.ppm * ad.area) + " میلیارد — " : "") + "هر متر " + M(ad.ppm) + " میلیون" + (ad.src ? " (از توضیحات)" : "") : "نامشخص"}</b></div>
+        <div><span>بازه منصفانه</span><b>${ad.area ? B(f.lo * rate * ad.area) + " تا " + B(f.hi * rate * ad.area) + " میلیارد" : M(f.lo * rate) + " تا " + M(f.hi * rate) + " میلیون هر متر"}</b></div>
+        ${rentMid > 0 ? `<div><span>رهن کامل منصفانه همین واحد</span><b>${B(rentMid / rr)} میلیارد <small>(یا اجاره ماهانه معادل ${M(rentMid)} میلیون)</small></b></div>` : ""}
       </div>
       <p class="muted small">مبنا: ${f.how}</p>
       ${qrow}
@@ -137,15 +166,22 @@ function render() {
       <p class="muted small">دلار آزاد (${MODES[state.mode]}): ${fa(rate)} تومان${FX && FX.date ? " — تا " + FX.date : ""}. سطح قیمت: معاملات بانک مرکزی؛ ضرایب محله: داده باز دیوار (ODbL).</p>`;
   } else {
     const rate = store.get("rentRate", DFP_RENT.rate);
-    if (!(ad.area > 0)) { $("#report").innerHTML = head + `<p class="err">متراژ آگهی خوانده نشد.</p>`; return; }
-    const f = rentRange(ad, q), eq = (ad.rent || 0) + ad.deposit * rate, epm = eq / ad.area, [vt, vc] = verdict(epm, f);
-    const fairRent = f.mid * ad.area - ad.deposit * rate;
+    if (!(ad.area > 0)) { $("#report").innerHTML = head + `<p class="err">متراژ آگهی خوانده نشد؛ بدون متراژ نمی‌شود اجاره منصفانه را حساب کرد.</p>`; return; }
+    const known = ad.deposit >= 0 && ad.rent >= 0 && (ad.deposit > 0 || ad.rent > 0);
+    const f = rentRange(ad, q), eq = known ? ad.rent + ad.deposit * rate : NaN, epm = eq / ad.area, [vt, vc] = verdict(epm, f);
+    const fairRent = known ? f.mid * ad.area - ad.deposit * rate : NaN;
+    state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
+    const fxr = store.get("fxManual", 0) || (FX && FX[state.mode]) || 0;
+    const saleMid = fxr > 0 ? fairRange(ad, dist, state.win, q).mid * fxr * ad.area : NaN;
     body = `${gauge(f.lo, f.mid, f.hi, epm, x => fa(x * ad.area / 1e6))}
       <p class="verdict ${vc}">${vt}</p>
+      <div class="fair"><span>اجاره منصفانه (معادل ماهانه)</span><b>${M(f.mid * ad.area)} میلیون</b>
+        <small>یا رهن کامل ${B(f.mid * ad.area / rate)} میلیارد</small></div>
       <div class="cards">
-        <div><span>اجاره ماهانه معادل منصفانه</span><b>${M(f.lo * ad.area)} تا ${M(f.hi * ad.area)} میلیون</b></div>
-        <div><span>این آگهی (معادل ماهانه)</span><b>${M(eq)} میلیون</b></div>
-        <div><span>${fairRent > 0 ? "اجاره منصفانه با همین ودیعه" : "ودیعه کامل منصفانه"}</span><b>${fairRent > 0 ? M(fairRent) + " میلیون" : B(f.mid * ad.area / rate) + " میلیارد"}</b></div>
+        <div><span>این آگهی</span><b>${known ? `ودیعه ${M(ad.deposit)} + اجاره ${M(ad.rent)} = معادل ${M(eq)} میلیون` + (ad.src ? " (از توضیحات)" : "") : "نامشخص"}</b></div>
+        <div><span>بازه منصفانه</span><b>${M(f.lo * ad.area)} تا ${M(f.hi * ad.area)} میلیون در ماه</b></div>
+        ${fairRent > 0 ? `<div><span>اجاره منصفانه با همین ودیعه</span><b>${M(fairRent)} میلیون</b></div>` : ""}
+        ${saleMid > 0 ? `<div><span>ارزش فروش منصفانه همین واحد</span><b>${B(saleMid)} میلیارد</b></div>` : ""}
       </div>
       <p class="muted small">مبنا: ${f.how}. ودیعه با نرخ ${fa(rate * 100)}٪ در ماه به اجاره تبدیل شده.</p>
       ${qrow}
