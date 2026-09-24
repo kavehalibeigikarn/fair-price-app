@@ -83,12 +83,14 @@ const state = { win: "3y", mode: "m24" };
       const v = q && q[key];
       if (v && Q[key][v]) { k *= Q[key][v]; parts.push(`${label} ${QN[v]}`); lo = 1 - (1 - lo) * Q.shrink; hi = 1 + (hi - 1) * Q.shrink; }
     }
+    const dd = q && q.deed && C.deed && C.deed[q.deed];
+    if (dd && q.deed !== "single") { k *= dd[0]; parts.push(dd[1]); }
     if (nb) {
       const mid = W.d[0][2] * Math.exp(nb.fe) * k;
       return { lo: mid * lo, mid, hi: mid * hi, how: `محله ${ad.hood || ad.slug} (${fa(nb.n)} آگهی مرجع)، ` + parts.join("، ") };
     }
-    const [, p25, p50, p75] = W.d[dist];
-    return { lo: p25, mid: p50, hi: p75, how: (dist ? `سطح منطقه ${fa(dist)}` : "سطح کل شهر") + " (داده محله کافی نیست)" };
+    const [, p25, p50, p75] = W.d[dist], kd = dd && q.deed !== "single" ? dd[0] : 1;
+    return { lo: p25 * kd, mid: p50 * kd, hi: p75 * kd, how: (dist ? `سطح منطقه ${fa(dist)}` : "سطح کل شهر") + " (داده محله کافی نیست)" };
   }
 
   function rentIdx(ym) {
@@ -139,3 +141,38 @@ const state = { win: "3y", mode: "m24" };
     return { ppm: vRef * S[i] / sRef, usd: H.usd[i], est: !useD && H.est.includes(ym),
              how: useD ? `روند منطقه ${fa(dist)}` : "روند کل شهر" };
   }
+
+// ---- commercial / old-house valuation (same structure as apartments; location quality from the category's own spread)
+function comQuality(C, v) { const m = { top: C.ghi, good: Math.sqrt(C.ghi), mid: 1, weak: Math.sqrt(C.glo), vweak: C.glo }; return m[v] || 1; }
+function cityOfficial1403() {
+  const H = DFP_HIST, v = H.ref.map(r => H.city[H.months.indexOf(r)]).filter(x => x);
+  return v.reduce((a, b) => a + b, 0) / v.length;
+}
+function comLevelNow(C, rate) {           // today's level relative to 1403: housing fair-price path (sale) or rent index (rent)
+  if (C.kind === "rent") return rentIdx(DFP_RENTIDX.now) / rentIdx(DFP_RENTIDX.sample);
+  return rate > 0 ? bands("3y")[0][2] * rate / cityOfficial1403() : NaN;
+}
+function comRange(ad, cat, q, rate) {
+  const C = DFP_COM[cat], nb = ad.slug && C.nb[ad.slug], parts = [];
+  const bin = (tbl, x) => { for (const [lo, hi, f] of tbl) if (x >= lo && x <= hi) return f; return 1; };
+  const size = C.unit === "land" ? (ad.land || ad.area) : ad.area;
+  let k = size > 0 ? bin(C.size, size) : 1;
+  if (C.age) { const age = ad.year ? jyNow() - ad.year : null; if (age !== null) { k *= bin(C.age, age); parts.push(`بنای ${fa(age)} ساله`); } else k *= C.age_na; }
+  if (C.floor) { if (ad.floor !== null && ad.floor !== undefined) { k *= bin(C.floor, ad.floor); parts.push(`طبقه ${fa(ad.floor)}`); } else k *= C.floor_na; }
+  for (const f of ["elevator", "parking", "warehouse", "deed"]) if (C[f]) k *= ad[f] === true ? C[f] : ad[f] === false ? 1 : Math.pow(C[f], C.share[f]);
+  let lo = nb ? nb.lo : C.glo, hi = nb ? nb.hi : C.ghi;
+  const v = q && q.street; if (v && v !== "") { k *= comQuality(C, v); lo = 1 - (1 - lo) * 0.6; hi = 1 + (hi - 1) * 0.6; parts.push("موقعیت " + ({ top: "عالی", good: "خوب", mid: "متوسط", weak: "ضعیف", vweak: "خیلی ضعیف" })[v]); }
+  const dd = C.kind === "sale" && q && q.deed && DFP_COEF.deed[q.deed];
+  if (dd && q.deed !== "single") { k *= dd[0]; parts.push(dd[1]); }
+  const mid = C.city_1403 * comLevelNow(C, rate) * (nb ? Math.exp(nb.fe) : 1) * k;
+  return { lo: mid * lo, mid, hi: mid * hi, size, unit: C.unit, kind: C.kind,
+           how: (nb ? `محله ${ad.hood || ad.slug} (${fa(nb.n)} آگهی ${C.label} مرجع)` : `سطح کل تهران برای ${C.label} (داده محله کافی نیست)`) + (parts.length ? "، " + parts.join("، ") : "") };
+}
+function comPast(ad, cat, q, rate, y) {    // same unit in year y (sale: along Tehran housing prices; rent: along the rent index)
+  const f = comRange(ad, cat, q, rate), C = DFP_COM[cat];
+  if (C.kind === "rent") return f.mid * rentIdx(y * 100 + 6) / rentIdx(DFP_RENTIDX.now);
+  const H = DFP_HIST, v = H.months.filter(m => Math.floor(m / 100) === y).map(m => H.city[H.months.indexOf(m)]);
+  if (!v.length) return NaN;
+  const cityY = v.reduce((a, b) => a + b, 0) / v.length;
+  return f.mid / (bands("3y")[0][2] * rate) * cityY;
+}

@@ -1,9 +1,33 @@
+const REPORT_CSS = `.dfp{--bg:#f6f4ef;--card:#fff;--ink:#23211d;--muted:#7a7468;--line:#e3ded3;--accent:#1f5f5b;--z1:#cfe8d3;--z2:#9fd0c8;--z3:#f3d9a8;--below:#2e7d3f;--above:#a2620b;
+  direction:rtl;color:var(--ink);font-family:Vazirmatn,IRANSansX,"Noto Naskh Arabic",Tahoma,sans-serif;line-height:1.7;font-size:14px}
+@media (prefers-color-scheme:dark){.dfp{--bg:#171614;--card:#221f1b;--ink:#eee8dc;--muted:#a39c8e;--line:#3a352e;--accent:#6cc0b5;--z1:#2f5a39;--z2:#2c6a63;--z3:#6d5424;--below:#7ccf8e;--above:#e0a95a}}
+.dfp h2{font-size:17px;margin:0 0 2px}
+.dfp select{font:inherit;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+.dfp label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
+.dfp .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:12px 0}
+.dfp .cards{display:grid;gap:8px;margin:10px 0}.dfp .cards div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding:4px 0}
+.dfp .cards span{color:var(--muted);font-size:13px}.dfp .cards b{font-size:14px;text-align:left}
+.dfp svg{width:100%;max-width:360px;display:block;margin:6px auto 0}
+.dfp .verdict{text-align:center;font-weight:700;font-size:17px;margin:4px 0}
+.dfp .verdict.below{color:var(--below)}.dfp .verdict.above{color:var(--above)}.dfp .verdict.fair{color:var(--accent)}
+.dfp .fair{text-align:center;margin:8px 0 4px;padding:10px;border-radius:10px;background:color-mix(in srgb,var(--z2) 35%,transparent)}
+.dfp .fair span{display:block;font-size:13px;color:var(--muted)}.dfp .fair b{display:block;font-size:22px}.dfp .fair small{color:var(--muted)}
+.dfp details{border-top:1px solid var(--line);padding:8px 0}.dfp summary{cursor:pointer;font-weight:700;font-size:14px}
+.dfp .muted{color:var(--muted)}.dfp .small{font-size:12px}.dfp .err{color:var(--above)}
+.dfp select:focus-visible,.dfp summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}`;
 // ---------- helpers
-const $ = q => document.querySelector(q);
+let ROOT = null;                                              // report container (app: #report, extension: shadow root div)
+const $ = q => ROOT.querySelector(q);
+function setRoot(el) { ROOT = el; }
+let FETCH_POST = async token => {                            // app: direct (CapacitorHttp); extension overrides via background
+  const r = await fetch(`https://api.divar.ir/v8/posts-v2/web/${token}`, { headers: { accept: "application/json" } });
+  if (!r.ok) throw new Error(r.status === 404 ? "این آگهی حذف شده یا منقضی شده است." : "خطای دیوار: " + r.status);
+  return r.json();
+};
 const FX_URL = "https://raw.githubusercontent.com/kooroshkz/Dollar-Rial-Toman-Live-Price-Dataset/main/data/Dollar_Rial_Price_Dataset.csv";
 const store = {
-  get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  get: (k, d) => { try { const v = localStorage.getItem("dfp:" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem("dfp:" + k, JSON.stringify(v)); } catch {} },
 };
 const M = x => fa(x / 1e6);
 const B = x => (x / 1e9).toLocaleString("fa-IR", { maximumFractionDigits: 2 });
@@ -43,7 +67,7 @@ function parsePost(P) {
                elevator: null, parking: null, warehouse: null, npark: 0, slug: "", hood: "", city: "", src: "" };
   const W = P.webengage || {};
   ad.slug = W.district || ""; ad.city = W.city || "";
-  const cat = String(W.category || W.cat_3 || W.cat3 || "");
+  const cat = String(W.category || W.cat_3 || W.cat3 || ""); ad.cat = cat;
   const wi = P.seo && P.seo.web_info; if (wi) ad.hood = wi.district_persian || "";
   let desc = "";
   walk(P, o => {
@@ -55,9 +79,11 @@ function parsePost(P) {
     else if (/^قیمت کل|^قیمت$/.test(k)) ad.total = money(v);
     else if (/^(ودیعه|رهن)/.test(k)) { ad.type = "rent"; const m = money(v); if (m >= 0) ad.deposit = m; }
     else if (/^اجار/.test(k)) { ad.type = "rent"; const m = money(v); if (m >= 0) ad.rent = m; }
+    else if (/^متراژ زمین/.test(k)) { const a = NUM(String(v)); if (a > 0) ad.land = a; }
     else if (/^متراژ/.test(k)) { const a = NUM(String(v)); if (a > 0) ad.area = a; }
     else if (/^ساخت/.test(k)) { const y = NUM(String(v)); if (y > 1300 && y < 1500) ad.year = y; }
     else if (/^طبقه/.test(k)) ad.floor = floorNum(v);
+    else if (/^سند/.test(k)) { const x = String(v); ad.deed = /تک.?برگ/.test(x) ? "single" : /منگوله/.test(x) ? "multi" : /قولنامه/.test(x) ? "written" : /اوقاف|موقوفه/.test(x) ? "awqaf" : "other"; }
   });
   walk(P, o => {                                     // amenities rows: {title:"آسانسور"} / {title:"آسانسور ندارد"}
     const k = String(o.title || ""); if (!k || k.length > 20) return;
@@ -65,6 +91,9 @@ function parsePost(P) {
       if (k.includes(word)) ad[key] = !(k.includes("ندارد") || o.available === false || o.disabled === true);
   });
   const t = ad.title + " " + desc;
+  ad.comCat = DFP_COM[cat] ? cat : /کلنگی/.test(ad.title) ? "plot-old"
+    : /مغازه|تجاری|غرفه/.test(ad.title) ? (/اجاره|رهن/.test(ad.title) ? "shop-rent" : "shop-sell")
+    : /اداری|دفتر کار|مطب/.test(ad.title) ? (/اجاره|رهن/.test(ad.title) ? "office-rent" : "office-sell") : "";
   if (!ad.type) ad.type = /rent|اجاره|رهن/.test(cat + " " + ad.title) ? "rent" : /sell|فروش/.test(cat + " " + ad.title) || ad.ppm > 0 || ad.total > 0 ? "sale" : null;
   if (!ad.type && /ودیعه|رهن|اجاره/.test(desc)) ad.type = "rent";
   if (!ad.type && /(قیمت|فروش)/.test(desc)) ad.type = "sale";
@@ -78,6 +107,18 @@ function parsePost(P) {
     if (!(ad.ppm > 0) && ad.total > 0 && ad.area > 0) ad.ppm = ad.total / ad.area;
     if (!(ad.ppm > 0) && ad.area > 0) { const tot = numFromText(t, /(?:قیمت|فی)\s*(?:کل)?\s*[:：]?\s*([\d.,٬]+)\s*(میلیارد|میلیون)/); if (tot > 1e8) { ad.ppm = tot / ad.area; ad.src = "desc"; } }
   }
+  if (ad.comCat) {                                   // commercial / old house: own model, own price fields
+    const C = DFP_COM[ad.comCat];
+    if (C.kind === "rent") {
+      if (!(ad.deposit >= 0)) ad.deposit = numFromText(t, /(?:رهن|ودیعه)\s*(?:کامل)?\s*[:：]?\s*([\d.,٬]+)\s*(میلیارد|میلیون|م(?=\s|$))?/);
+      if (!(ad.rent >= 0)) ad.rent = numFromText(t, /اجاره(?:\s*ماهانه)?\s*[:：]?\s*([\d.,٬]+)\s*(میلیارد|میلیون|م(?=\s|$))?/);
+      if (ad.deposit >= 0 && !(ad.rent >= 0)) ad.rent = 0; if (ad.rent >= 0 && !(ad.deposit >= 0)) ad.deposit = 0;
+    } else if (!(ad.total > 0)) { const tot = numFromText(t, /(?:قیمت|فی)\s*(?:کل)?\s*[:：]?\s*([\d.,٬]+)\s*(میلیارد|میلیون)/); if (tot > 1e7) { ad.total = tot; ad.src = "desc"; } }
+    ad.type = "com";
+  }
+  if (/اوقاف|موقوفه/.test(t)) ad.deed = "awqaf";
+  else if (/سرقفلی/.test(t) && !/شش.?دانگ|ملکیت/.test(t)) ad.deed = "sarghofli";
+  else if (!ad.deed && /قولنامه/.test(t)) ad.deed = "written";
   ad.npark = parkingCount(desc);
   if (!ad.area) { const a = en(t).match(/(\d{2,4})\s*متر/); if (a) ad.area = +a[1]; }
   return ad;
@@ -114,34 +155,37 @@ const QOPT = [["", "نامشخص"], ["top", "عالی"], ["good", "خوب"], ["m
 let AD = null, TOKEN = null, FX = null;
 async function analyze(text) {
   const token = extractToken(text);
-  const out = $("#report");
-  if (!token) { out.innerHTML = `<p class="err">لینک آگهی دیوار پیدا نشد. لینک را از دکمه «اشتراک‌گذاری» آگهی در دیوار بفرستید یا کپی کنید.</p>`; return; }
-  out.innerHTML = `<p class="muted">در حال دریافت آگهی…</p>`;
-  try {
-    const r = await fetch(`https://api.divar.ir/v8/posts-v2/web/${token}`, { headers: { accept: "application/json" } });
-    if (!r.ok) throw new Error(r.status === 404 ? "این آگهی حذف شده یا منقضی شده است." : "خطای دیوار: " + r.status);
-    AD = parsePost(await r.json()); TOKEN = token;
-  } catch (e) { out.innerHTML = `<p class="err">${e.message || "اتصال به دیوار برقرار نشد."}</p>`; return; }
-  if (!AD.type) { out.innerHTML = `<p class="err">نوع آگهی (فروش یا اجاره آپارتمان) تشخیص داده نشد.</p>`; return; }
-  if (AD.city && AD.city !== "tehran") { out.innerHTML = `<p class="err">فعلاً فقط آگهی‌های شهر تهران پشتیبانی می‌شوند.</p>`; return; }
+  if (!token) { ROOT.innerHTML = `<p class="err">لینک آگهی دیوار پیدا نشد. لینک را از دکمه «اشتراک‌گذاری» آگهی در دیوار بفرستید یا کپی کنید.</p>`; return; }
+  return analyzeToken(token);
+}
+async function analyzeToken(token) {
+  ROOT.innerHTML = `<p class="muted">در حال دریافت آگهی…</p>`;
+  try { AD = parsePost(await FETCH_POST(token)); TOKEN = token; }
+  catch (e) { ROOT.innerHTML = `<p class="err">${e.message || "اتصال به دیوار برقرار نشد."}</p>`; return; }
+  if (!AD.type) { ROOT.innerHTML = `<p class="err">نوع آگهی تشخیص داده نشد (فعلاً آپارتمان، کلنگی، مغازه و اداری پشتیبانی می‌شوند).</p>`; return; }
+  if (AD.city && AD.city !== "tehran") { ROOT.innerHTML = `<p class="err">فعلاً فقط آگهی‌های شهر تهران پشتیبانی می‌شوند.</p>`; return; }
   FX = FX || await getRate();
   render();
 }
 
 function render() {
   const ad = AD, q = store.get("q:" + TOKEN, { street: "", plan: "", npark: "" });
+  if (!q.deed) q.deed = ad.deed || "single";
+  const deedList = ad.type === "com" && /shop/.test(ad.comCat) ? ["single", "sarghofli", "written", "awqaf"] : ["single", "multi", "written", "awqaf", "other"];
+  const deedSel = `<label>${ad.type === "com" && /shop/.test(ad.comCat) ? "نوع مالکیت / سند" : "نوع سند"}${ad.deed ? " (از آگهی)" : ""}<select data-q="deed">${opts(deedList.map(k => [k, k === "single" && /shop/.test(ad.comCat || "") ? "ملکیت، تک‌برگ" : DFP_COEF.deed[k][1]]), q.deed)}</select></label>`;
   const dist = store.get("over", {})[norm(ad.hood)] ?? lookup(ad.hood);
   const head = `<h2>${ad.title || "آگهی دیوار"}</h2><p class="muted">${[ad.hood, ad.area && fa(ad.area) + " متر", ad.year && "ساخت " + fa(ad.year).replace(/٬/g, ""), ad.floor !== null && "طبقه " + fa(ad.floor)].filter(Boolean).join(" · ")}</p>`;
   const qrow = `<div class="grid">
       <label>موقعیت در محله<select data-q="street">${opts(QOPT, q.street)}</select></label>
       <label>نقشه واحد<select data-q="plan">${opts(QOPT, q.plan)}</select></label>
+      ${ad.type === "sale" ? deedSel : ""}
       ${ad.type === "sale" ? `<label>تعداد پارکینگ<select data-q="npark">${opts([["", "طبق آگهی"], [0, "ندارد"], [1, "۱"], [2, "۲"], [3, "۳"]], q.npark)}</select></label>` : ""}
     </div>`;
   let body = "";
   if (ad.type === "sale") {
     state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
     const manual = store.get("fxManual", 0), rate = manual || (FX && FX[state.mode]) || 0;
-    if (!(rate > 0)) { $("#report").innerHTML = head + `<p class="err">نرخ دلار دریافت نشد؛ در تنظیمات دستی وارد کنید.</p>`; return; }
+    if (!(rate > 0)) { ROOT.innerHTML = head + `<p class="err">نرخ دلار دریافت نشد؛ در تنظیمات دستی وارد کنید.</p>`; return; }
     const f = fairRange(ad, dist, state.win, q), usd = ad.ppm / rate, [vt, vc] = verdict(usd, f);
     const rr = store.get("rentRate", DFP_RENT.rate), rentMid = ad.area > 0 ? rentRange(ad, q).mid * ad.area : NaN;
     body = `${gauge(f.lo, f.mid, f.hi, usd, x => fa(x * rate / 1e6))}
@@ -164,9 +208,38 @@ function render() {
       <details><summary>مقایسه با محله دیگر</summary>${cmpTool(ad, dist, q, rate)}</details>
       <details><summary>قیمت با تورم از سال مبنا</summary>${inflTool(ad, dist, q)}</details>
       <p class="muted small">دلار آزاد (${MODES[state.mode]}): ${fa(rate)} تومان${FX && FX.date ? " — تا " + FX.date : ""}. سطح قیمت: معاملات بانک مرکزی؛ ضرایب محله: داده باز دیوار (ODbL).</p>`;
+  } else if (ad.type === "com") {
+    const C = DFP_COM[ad.comCat];
+    state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
+    const rate = store.get("fxManual", 0) || (FX && FX[state.mode]) || 0, rr = store.get("rentRate", DFP_RENT.rate);
+    const f = comRange(ad, ad.comCat, q, rate), S = f.size, unitTxt = C.unit === "land" ? "متر زمین" : "متر";
+    if (!(S > 0) || !(f.mid > 0)) { ROOT.innerHTML = head + `<p class="err">${S > 0 ? "نرخ دلار دریافت نشد." : "متراژ آگهی خوانده نشد."}</p>`; return; }
+    const val = C.kind === "rent" ? ((ad.deposit >= 0 && ad.rent >= 0 && (ad.deposit > 0 || ad.rent > 0)) ? (ad.rent + ad.deposit * rr) / S : NaN)
+                                  : (ad.total > 0 ? ad.total / S : NaN);
+    const [vt, vc] = verdict(val, f), per = x => C.kind === "rent" ? M(x * S) + " میلیون در ماه" : B(x * S) + " میلیارد";
+    const years = Object.keys(DFP_INFL.years).map(Number).filter(y => y >= 1396).sort((a, b) => b - a), py = +store.get("tool:cpast", 1400);
+    const past = comPast(ad, ad.comCat, q, rate, py), ck = store.get("tool:ccmp", "");
+    let cmpTxt = ""; if (ck) { const g = comRange({ ...ad, slug: ck }, ad.comCat, q, rate), d = Math.round((g.mid / f.mid - 1) * 100);
+      cmpTxt = `همین ملک در ${DFP_FA[ck] || ck}: <b>${per(g.mid)}</b> — ${fa(Math.abs(d))}٪ ${d >= 0 ? "گران‌تر" : "ارزان‌تر"}`; }
+    body = `<p class="muted small">${C.label}</p>${gauge(f.lo, f.mid, f.hi, val, x => C.kind === "rent" ? fa(x * S / 1e6) : fa(x / 1e6))}
+      <p class="verdict ${vc}">${vt}</p>
+      <div class="fair"><span>${C.kind === "rent" ? "اجاره منصفانه (معادل ماهانه)" : "ارزش منصفانه"}</span><b>${per(f.mid)}</b>
+        <small>${C.kind === "rent" ? "یا رهن کامل " + B(f.mid * S / rr) + " میلیارد" : "هر " + unitTxt + " " + M(f.mid) + " میلیون"}</small></div>
+      <div class="cards">
+        <div><span>این آگهی</span><b>${val > 0 ? (C.kind === "rent" ? `ودیعه ${M(ad.deposit)} + اجاره ${M(ad.rent)} = معادل ${M(val * S)} میلیون` : B(ad.total) + " میلیارد — هر " + unitTxt + " " + M(val) + " میلیون") + (ad.src ? " (از توضیحات)" : "") : "نامشخص"}</b></div>
+        <div><span>بازه منصفانه</span><b>${per(f.lo)} تا ${per(f.hi)}</b></div>
+      </div>
+      <p class="muted small">مبنا: ${f.how}. ${C.kind === "rent" ? "سطح ۱۴۰۳ با شاخص اجاره به امروز آورده شده." : "سطح ۱۴۰۳ هم‌پای قیمت منصفانه مسکن تهران (مبنای دلار " + MODES[state.mode] + ") به امروز آورده شده."}</p>
+      <div class="grid"><label>${C.unit === "land" ? "موقعیت و عرض گذر" : "موقعیت (بَر خیابان، دید، دسترسی)"}<select data-q="street">${opts(QOPT, q.street)}</select></label>
+        ${C.kind === "sale" ? deedSel : ""}
+        ${C.kind === "sale" ? `<label>مبنای دلار<select id="mode">${opts(Object.entries(MODES), state.mode)}</select></label>` : ""}</div>
+      <details><summary>همین ملک در گذشته</summary><label>سال<select data-tool="cpast">${opts(years.map(y => [y, fa(y).replace(/٬/g, "")]), py)}</select></label>
+        <p>${past > 0 ? "حدود <b>" + per(past) + "</b> — تخمین " + (C.kind === "rent" ? "با شاخص اجاره" : "با روند قیمت مسکن تهران") : "داده کافی نیست."}</p></details>
+      <details><summary>مقایسه با محله دیگر</summary><label>محله<select data-tool="ccmp">${opts([["", "انتخاب کنید"]].concat(nbNames(C.nb)), ck)}</select></label><p>${cmpTxt}</p></details>
+      <p class="muted small">داده: آگهی‌های ۱۴۰۳ دیوار (ODbL). برای ${C.label} آمار رسمی معامله وجود ندارد؛ دقت کمتر از آپارتمان است.</p>`;
   } else {
     const rate = store.get("rentRate", DFP_RENT.rate);
-    if (!(ad.area > 0)) { $("#report").innerHTML = head + `<p class="err">متراژ آگهی خوانده نشد؛ بدون متراژ نمی‌شود اجاره منصفانه را حساب کرد.</p>`; return; }
+    if (!(ad.area > 0)) { ROOT.innerHTML = head + `<p class="err">متراژ آگهی خوانده نشد؛ بدون متراژ نمی‌شود اجاره منصفانه را حساب کرد.</p>`; return; }
     const known = ad.deposit >= 0 && ad.rent >= 0 && (ad.deposit > 0 || ad.rent > 0);
     const f = rentRange(ad, q), eq = known ? ad.rent + ad.deposit * rate : NaN, epm = eq / ad.area, [vt, vc] = verdict(epm, f);
     const fairRent = known ? f.mid * ad.area - ad.deposit * rate : NaN;
@@ -188,13 +261,13 @@ function render() {
       <details><summary>اجاره همین واحد در گذشته</summary>${rentHistTool(ad, q, rate)}</details>
       <details><summary>مقایسه با محله دیگر</summary>${rentCmpTool(ad, q)}</details>`;
   }
-  $("#report").innerHTML = head + body;
-  document.querySelectorAll("[data-q]").forEach(el => el.onchange = () => { q[el.dataset.q] = el.value; store.set("q:" + TOKEN, q); render(); });
+  ROOT.innerHTML = head + body;
+  ROOT.querySelectorAll("[data-q]").forEach(el => el.onchange = () => { q[el.dataset.q] = el.value; store.set("q:" + TOKEN, q); render(); });
   const on = (id, fn) => { const el = $(id); if (el) el.onchange = fn; };
   on("#win", e => { store.set("win", e.target.value); render(); });
   on("#mode", e => { store.set("mode", e.target.value); render(); });
   on("#dist", e => { const o = store.get("over", {}); o[norm(ad.hood)] = +e.target.value; store.set("over", o); render(); });
-  document.querySelectorAll("[data-tool]").forEach(el => el.onchange = () => { store.set("tool:" + el.dataset.tool, el.value); render(); document.querySelector(`[data-tool="${el.dataset.tool}"]`).closest("details").open = true; });
+  ROOT.querySelectorAll("[data-tool]").forEach(el => el.onchange = () => { store.set("tool:" + el.dataset.tool, el.value); render(); ROOT.querySelector(`[data-tool="${el.dataset.tool}"]`).closest("details").open = true; });
 }
 
 // ---------- tools
@@ -236,11 +309,3 @@ function rentCmpTool(ad, q) {
   return `<label>محله<select data-tool="rcmp">${opts([["", "انتخاب کنید"]].concat(nbNames(DFP_RENT.nb)), k)}</select></label><p>${res}</p>`;
 }
 
-// ---------- boot: shared link (?share=...) or paste
-window.addEventListener("DOMContentLoaded", async () => {
-  $("#go").onclick = () => analyze($("#link").value);
-  $("#paste").onclick = async () => { try { $("#link").value = await navigator.clipboard.readText(); analyze($("#link").value); } catch { $("#link").focus(); } };
-  const shared = new URLSearchParams(location.search).get("share");
-  if (shared) { $("#link").value = shared; analyze(shared); }
-  FX = await getRate();
-});
