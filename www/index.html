@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>قیمت منصفانه</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#23211d;--muted:#7a7468;--line:#e3ded3;--accent:#1f5f5b;--z1:#cfe8d3;--z2:#9fd0c8;--z3:#f3d9a8;--below:#2e7d3f;--above:#a2620b}
+@media (prefers-color-scheme:dark){:root{--bg:#171614;--card:#221f1b;--ink:#eee8dc;--muted:#a39c8e;--line:#3a352e;--accent:#6cc0b5;--z1:#2f5a39;--z2:#2c6a63;--z3:#6d5424;--below:#7ccf8e;--above:#e0a95a}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Vazirmatn,"Noto Naskh Arabic",Tahoma,sans-serif;line-height:1.7}
+body{padding:calc(env(safe-area-inset-top,0px) + 12px) 14px calc(env(safe-area-inset-bottom,0px) + 24px)}
+h1{font-size:20px;margin:4px 0 12px} h2{font-size:17px;margin:0 0 2px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:8px} input{flex:1;min-width:0;direction:ltr;font:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+button{font:inherit;font-size:14px;padding:10px 14px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+select{font:inherit;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:12px 0}
+.cards{display:grid;gap:8px;margin:10px 0} .cards div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding:4px 0}
+.cards span{color:var(--muted);font-size:13px} .cards b{font-size:14px;text-align:left}
+svg{width:100%;max-width:360px;display:block;margin:6px auto 0}
+.verdict{text-align:center;font-weight:700;font-size:17px;margin:4px 0}
+.verdict.below{color:var(--below)} .verdict.above{color:var(--above)} .verdict.fair{color:var(--accent)}
+details{border-top:1px solid var(--line);padding:8px 0} summary{cursor:pointer;font-weight:700;font-size:14px}
+.muted{color:var(--muted)} .small{font-size:12px} .err{color:var(--above)}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<h1>قیمت منصفانه ملک</h1>
+<div class="box">
+  <div class="row"><input id="link" placeholder="لینک آگهی دیوار را اینجا بگذارید" inputmode="url"><button id="go">تحلیل</button></div>
+  <div class="row" style="margin-top:8px"><button class="ghost" id="paste">چسباندن از کلیپ‌بورد</button></div>
+  <p class="muted small">یا در اپ دیوار روی «اشتراک‌گذاری» آگهی بزنید و «قیمت منصفانه» را انتخاب کنید.</p>
+</div>
+<div class="box" id="report"><p class="muted">هنوز آگهی‌ای تحلیل نشده.</p></div>
+<script src="neighborhoods.js"></script><script src="data.js"></script><script src="coef.js"></script>
+<script src="hist.js"></script><script src="rent.js"></script><script src="core.js"></script><script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "appId": "ir.kaveh.fairprice",
+  "appName": "قیمت منصفانه",
+  "webDir": "www",
+  "plugins": { "CapacitorHttp": { "enabled": true } }
+}
