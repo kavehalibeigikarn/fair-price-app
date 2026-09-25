@@ -13,6 +13,7 @@ const REPORT_CSS = `.dfp{--bg:#f6f4ef;--card:#fff;--ink:#23211d;--muted:#7a7468;
 .dfp .fair{text-align:center;margin:8px 0 4px;padding:10px;border-radius:10px;background:color-mix(in srgb,var(--z2) 35%,transparent)}
 .dfp .fair span{display:block;font-size:13px;color:var(--muted)}.dfp .fair b{display:block;font-size:22px}.dfp .fair small{color:var(--muted)}
 .dfp details{border-top:1px solid var(--line);padding:8px 0}.dfp summary{cursor:pointer;font-weight:700;font-size:14px}
+.dfp .premium summary{color:var(--accent)}.dfp ul{margin:6px 0;padding-right:18px}.dfp li{margin:4px 0}
 .dfp .muted{color:var(--muted)}.dfp .small{font-size:12px}.dfp .err{color:var(--above)}
 .dfp select:focus-visible,.dfp summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}`;
 // ---------- helpers
@@ -68,7 +69,7 @@ function parsePost(P) {
   const W = P.webengage || {};
   ad.slug = W.district || ""; ad.city = W.city || "";
   const cat = String(W.category || W.cat_3 || W.cat3 || ""); ad.cat = cat;
-  const wi = P.seo && P.seo.web_info; if (wi) ad.hood = wi.district_persian || "";
+  const wi = P.seo && P.seo.web_info; if (wi) { ad.hood = wi.district_persian || ""; ad.cityFa = wi.city_persian || ""; }
   let desc = "";
   walk(P, o => {
     if (o.widget_type === "DESCRIPTION_ROW" && o.data && o.data.text) desc += "\n" + o.data.text;
@@ -163,7 +164,11 @@ async function analyzeToken(token) {
   try { AD = parsePost(await FETCH_POST(token)); TOKEN = token; }
   catch (e) { ROOT.innerHTML = `<p class="err">${e.message || "اتصال به دیوار برقرار نشد."}</p>`; return; }
   if (!AD.type) { ROOT.innerHTML = `<p class="err">نوع آگهی تشخیص داده نشد (فعلاً آپارتمان، کلنگی، مغازه و اداری پشتیبانی می‌شوند).</p>`; return; }
-  if (AD.city && AD.city !== "tehran") { ROOT.innerHTML = `<p class="err">فعلاً فقط آگهی‌های شهر تهران پشتیبانی می‌شوند.</p>`; return; }
+  AD.iran = !!(AD.city && AD.city !== "tehran");
+  if (AD.iran) {
+    if (AD.type === "com") { ROOT.innerHTML = `<p class="err">کلنگی و تجاری فعلاً فقط برای تهران پشتیبانی می‌شوند.</p>`; return; }
+    if (!DFP_IRAN[AD.type === "rent" ? "rent" : "sale"].city[AD.city]) { ROOT.innerHTML = `<p class="err">برای شهر ${AD.cityFa || AD.city} آگهی کافی در داده دیوار نبود.</p>`; return; }
+  }
   FX = FX || await getRate();
   render();
 }
@@ -185,9 +190,11 @@ function render() {
   if (ad.type === "sale") {
     state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
     const manual = store.get("fxManual", 0), rate = manual || (FX && FX[state.mode]) || 0;
-    if (!(rate > 0)) { ROOT.innerHTML = head + `<p class="err">نرخ دلار دریافت نشد؛ در تنظیمات دستی وارد کنید.</p>`; return; }
-    const f = fairRange(ad, dist, state.win, q), usd = ad.ppm / rate, [vt, vc] = verdict(usd, f);
-    const rr = store.get("rentRate", DFP_RENT.rate), rentMid = ad.area > 0 ? rentRange(ad, q).mid * ad.area : NaN;
+    if (!(rate > 0)) { ROOT.innerHTML = head + `<p class="err">نرخ دلار دریافت نشد. نرخ دلار آزاد را دستی وارد کنید (تومان):</p>
+      <div class="grid"><label>نرخ دلار<input id="fxm" type="number" inputmode="numeric" placeholder="مثلاً ۱۲۰۰۰۰" style="font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px"></label></div>`;
+      $("#fxm").onchange = e => { const v = +e.target.value; if (v > 1000) { store.set("fxManual", v); render(); } }; return; }
+    const f = ad.iran ? iranRange(ad, "sale", q, rate) : fairRange(ad, dist, state.win, q), usd = ad.ppm / rate, [vt, vc] = verdict(usd, f);
+    const rr = store.get("rentRate", DFP_RENT.rate), rentMid = ad.area > 0 ? (ad.iran ? (iranRange(ad, "rent", q, rate) || {}).mid : rentRange(ad, q).mid) * ad.area : NaN;
     body = `${gauge(f.lo, f.mid, f.hi, usd, x => fa(x * rate / 1e6))}
       <p class="verdict ${vc}">${vt}</p>
       <div class="fair"><span>ارزش منصفانه</span><b>${ad.area ? B(f.mid * rate * ad.area) + " میلیارد" : M(f.mid * rate) + " میلیون هر متر"}</b>
@@ -200,20 +207,24 @@ function render() {
       <p class="muted small">مبنا: ${f.how}</p>
       ${qrow}
       <div class="grid">
-        <label>بازه<select id="win">${opts([["3y", "۳ سال اخیر"], ["7y", "۷ سال"]], state.win)}</select></label>
+        ${ad.iran ? "" : `<label>بازه<select id="win">${opts([["3y", "۳ سال اخیر"], ["7y", "۷ سال"]], state.win)}</select></label>
         <label>مبنای دلار<select id="mode">${opts(Object.entries(MODES), state.mode)}</select></label>
-        <label>منطقه<select id="dist">${opts([[0, "نامشخص"]].concat(Array.from({ length: 22 }, (_, i) => [i + 1, "منطقه " + fa(i + 1)])), dist)}</select></label>
+        <label>منطقه<select id="dist">${opts([[0, "نامشخص"]].concat(Array.from({ length: 22 }, (_, i) => [i + 1, "منطقه " + fa(i + 1)])), dist)}</select></label>`}
       </div>
-      <details><summary>قیمت همین ملک در گذشته</summary>${histTool(ad, dist, q)}</details>
+      ${ad.iran ? `${DFP_CITYHIST[ad.city] ? `<details><summary>قیمت همین ملک در گذشته</summary>${cityHistTool(ad, q, rate)}</details>
+        <details><summary>قیمت با تورم از سال مبنا</summary>${cityInflTool(ad, q, rate)}</details>` : ""}
+        <details><summary>مقایسه با محله دیگر در همین شهر</summary>${iranCmpTool(ad, "sale", q, rate)}</details>`
+      : `<details><summary>قیمت همین ملک در گذشته</summary>${histTool(ad, dist, q)}</details>
       <details><summary>مقایسه با محله دیگر</summary>${cmpTool(ad, dist, q, rate)}</details>
-      <details><summary>قیمت با تورم از سال مبنا</summary>${inflTool(ad, dist, q)}</details>
-      <p class="muted small">دلار آزاد (${MODES[state.mode]}): ${fa(rate)} تومان${FX && FX.date ? " — تا " + FX.date : ""}. سطح قیمت: معاملات بانک مرکزی؛ ضرایب محله: داده باز دیوار (ODbL).</p>`;
+      <details><summary>قیمت با تورم از سال مبنا</summary>${inflTool(ad, dist, q)}</details>`}
+      <details class="premium"><summary>تحلیل ⭐</summary>${analysisTool(ad, dist, q)}</details>
+      <p class="muted small">دلار آزاد (${MODES[state.mode]}): ${fa(rate)} تومان${FX && FX.date ? " — تا " + FX.date : ""}. ${ad.iran ? "سطح قیمت: آگهی‌های ۱۴۰۳ دیوار در همین شهر، هم‌پای مسیر قیمت منصفانه تهران به امروز آورده شده (آمار رسمی معامله برای این شهر نیست)." : "سطح قیمت: معاملات بانک مرکزی؛ ضرایب محله: داده باز دیوار (ODbL)."}</p>`;
   } else if (ad.type === "com") {
     const C = DFP_COM[ad.comCat];
     state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
     const rate = store.get("fxManual", 0) || (FX && FX[state.mode]) || 0, rr = store.get("rentRate", DFP_RENT.rate);
     const f = comRange(ad, ad.comCat, q, rate), S = f.size, unitTxt = C.unit === "land" ? "متر زمین" : "متر";
-    if (!(S > 0) || !(f.mid > 0)) { ROOT.innerHTML = head + `<p class="err">${S > 0 ? "نرخ دلار دریافت نشد." : "متراژ آگهی خوانده نشد."}</p>`; return; }
+    if (!(S > 0) || !(f.mid > 0)) { ROOT.innerHTML = head + `<p class="err">${S > 0 ? "نرخ دلار دریافت نشد؛ از آگهی فروش آپارتمان نرخ را دستی وارد کنید یا کمی بعد دوباره امتحان کنید." : "متراژ آگهی خوانده نشد."}</p>`; return; }
     const val = C.kind === "rent" ? ((ad.deposit >= 0 && ad.rent >= 0 && (ad.deposit > 0 || ad.rent > 0)) ? (ad.rent + ad.deposit * rr) / S : NaN)
                                   : (ad.total > 0 ? ad.total / S : NaN);
     const [vt, vc] = verdict(val, f), per = x => C.kind === "rent" ? M(x * S) + " میلیون در ماه" : B(x * S) + " میلیارد";
@@ -241,11 +252,12 @@ function render() {
     const rate = store.get("rentRate", DFP_RENT.rate);
     if (!(ad.area > 0)) { ROOT.innerHTML = head + `<p class="err">متراژ آگهی خوانده نشد؛ بدون متراژ نمی‌شود اجاره منصفانه را حساب کرد.</p>`; return; }
     const known = ad.deposit >= 0 && ad.rent >= 0 && (ad.deposit > 0 || ad.rent > 0);
-    const f = rentRange(ad, q), eq = known ? ad.rent + ad.deposit * rate : NaN, epm = eq / ad.area, [vt, vc] = verdict(epm, f);
+    const f = ad.iran ? iranRange(ad, "rent", q, 0) : rentRange(ad, q), eq = known ? ad.rent + ad.deposit * rate : NaN, epm = eq / ad.area, [vt, vc] = verdict(epm, f);
     const fairRent = known ? f.mid * ad.area - ad.deposit * rate : NaN;
     state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
     const fxr = store.get("fxManual", 0) || (FX && FX[state.mode]) || 0;
-    const saleMid = fxr > 0 ? fairRange(ad, dist, state.win, q).mid * fxr * ad.area : NaN;
+    const sf = fxr > 0 ? (ad.iran ? iranRange(ad, "sale", q, fxr) : fairRange(ad, dist, state.win, q)) : null;
+    const saleMid = sf ? sf.mid * fxr * ad.area : NaN;
     body = `${gauge(f.lo, f.mid, f.hi, epm, x => fa(x * ad.area / 1e6))}
       <p class="verdict ${vc}">${vt}</p>
       <div class="fair"><span>اجاره منصفانه (معادل ماهانه)</span><b>${M(f.mid * ad.area)} میلیون</b>
@@ -258,8 +270,10 @@ function render() {
       </div>
       <p class="muted small">مبنا: ${f.how}. ودیعه با نرخ ${fa(rate * 100)}٪ در ماه به اجاره تبدیل شده.</p>
       ${qrow}
-      <details><summary>اجاره همین واحد در گذشته</summary>${rentHistTool(ad, q, rate)}</details>
-      <details><summary>مقایسه با محله دیگر</summary>${rentCmpTool(ad, q)}</details>`;
+      ${ad.iran ? `<details><summary>اجاره همین واحد در گذشته</summary>${rentHistTool(ad, q, rate)}</details>
+        <details><summary>مقایسه با محله دیگر در همین شهر</summary>${iranCmpTool(ad, "rent", q, rate)}</details>`
+      : `<details><summary>اجاره همین واحد در گذشته</summary>${rentHistTool(ad, q, rate)}</details>
+      <details><summary>مقایسه با محله دیگر</summary>${rentCmpTool(ad, q)}</details>`}`;
   }
   ROOT.innerHTML = head + body;
   ROOT.querySelectorAll("[data-q]").forEach(el => el.onchange = () => { q[el.dataset.q] = el.value; store.set("q:" + TOKEN, q); render(); });
@@ -272,6 +286,68 @@ function render() {
 
 // ---------- tools
 const nbNames = src => Object.keys(src).map(k => [k, DFP_FA[k] || k]).sort((a, b) => a[1].localeCompare(b[1], "fa"));
+// ---------- premium analysis: fair value under different dollar averages, CPI view, rental yield, and a plain-language summary
+function analysisTool(ad, dist, q) {
+  if (!(FX && FX.m24 > 0)) return "<p>نرخ دلار در دسترس نیست.</p>";
+  const saved = state.mode, rows = [], val = {};
+  for (const m of ["spot", "m3", "m12", "m24"]) {
+    state.mode = m; const r = FX[m], f = ad.iran ? iranRange(ad, "sale", q, r) : fairRange(ad, dist, "3y", q);
+    if (f) { val[m] = f.mid * r; rows.push([MODES[m], val[m]]); }
+  }
+  state.mode = saved;
+  const P = ad.ppm > 0 ? ad.ppm : NaN, pct = v => Math.round((P / v - 1) * 100), sgn = d => `${fa(Math.abs(d))}٪ ${d >= 0 ? "بالاتر" : "پایین‌تر"}`;
+  const tbl = rows.map(([n, v]) => `<div><span>با دلار ${n}</span><b>${M(v)} میلیون${P > 0 ? " — آگهی " + sgn(pct(v)) : ""}</b></div>`).join("");
+  const I = DFP_INFL, yrsA = Object.keys(I.years).map(Number);
+  let cpiLong = NaN, cpiRecent = NaN;
+  if (ad.iran) { if (DFP_CITYHIST[ad.city]) { cpiLong = cityInfl(ad, q, FX.m24, yrsA.filter(y => y >= 1388 && y <= 1397)); cpiRecent = cityInfl(ad, q, FX.m24, yrsA.filter(y => y >= 1400)); } }
+  else { state.mode = "m24"; const ratio = fairRange(ad, dist, "3y", q).mid / bands("3y")[0][2]; state.mode = saved;
+    const med = ys => { const v = ys.map(y => I.years[y][0] * I.now.cpi / I.years[y][1]).sort((x, y) => x - y); return v[Math.floor(v.length / 2)]; };
+    cpiLong = med(yrsA.filter(y => y >= 1388 && y <= 1397)) * ratio; cpiRecent = med(yrsA.filter(y => y >= 1400)) * ratio; }
+  const rr = store.get("rentRate", DFP_RENT.rate);
+  const rentF = ad.area > 0 ? (ad.iran ? iranRange(ad, "rent", q, 0) : rentRange(ad, q)) : null;
+  const yieldPct = rentF && P > 0 ? rentF.mid * 12 / P * 100 : NaN;
+  const lag = val.m3 && val.m24 ? Math.round((val.m3 / val.m24 - 1) * 100) : NaN;
+  const s = [];
+  if (P > 0 && val.m24) {
+    const d = pct(val.m24);
+    s.push(Math.abs(d) <= 7 ? "قیمت آگهی با ارزش منصفانه بلندمدت (دلار میانگین ۲۴ ماه) هم‌خوان است." :
+      d > 0 ? `قیمت آگهی ${fa(d)}٪ بالاتر از ارزش منصفانه بلندمدت است؛ جای چانه‌زنی دارد.` : `قیمت آگهی ${fa(-d)}٪ پایین‌تر از ارزش منصفانه بلندمدت است؛ اگر مشکل پنهانی (سند، کیفیت، موقعیت) ندارد، فرصت محسوب می‌شود.`);
+  }
+  if (lag > 10) s.push(`ارزش با دلار ۳ ماه اخیر ${fa(lag)}٪ بالاتر از ارزش با دلار ۲۴ ماه است: دلار اخیراً جهش کرده و مسکن معمولاً با تأخیر یک تا دو ساله دنبالش می‌رود؛ احتمال رشد قیمت در ماه‌های آینده بیشتر است.`);
+  else if (lag < -10) s.push(`ارزش با دلار ۳ ماه اخیر ${fa(-lag)}٪ پایین‌تر از میانگین ۲۴ ماه است: دلار اخیراً افت کرده و فشار صعودی بر مسکن کمتر است.`);
+  else if (!isNaN(lag)) s.push("دلار ۳ ماه اخیر و ۲۴ ماه فاصله زیادی ندارند؛ از سمت ارز فشار خاصی بر قیمت نیست.");
+  if (P > 0 && cpiLong > 0) { const d = pct(cpiLong); s.push(d > 25 ? `نسبت به دوره هم‌گامی مسکن و تورم (۱۳۸۸–۱۳۹۷) قیمت ${fa(d)}٪ بالاتر است؛ یعنی مسکن از تورم عمومی جلو زده و بخشی از قیمت امروز به ماندگاری این جهش بستگی دارد.` : d < -10 ? `با معیار تورم بلندمدت، قیمت ${fa(-d)}٪ پایین‌تر است؛ از این منظر ارزان است.` : "با معیار تورم بلندمدت قیمت در محدوده معمول است."); }
+  if (yieldPct > 0) s.push(`بازده اجاره ناخالص حدود ${yieldPct.toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪ در سال است، در حالی که بازار ودیعه را با ${fa(rr * 1200)}٪ در سال به اجاره تبدیل می‌کند؛ پس بازده این ملک عمدتاً از رشد قیمت می‌آید، نه اجاره${yieldPct >= 6 ? " (البته برای مسکن این بازده نسبتاً بالاست)" : ""}.`);
+  return `<div class="cards">${tbl}
+      ${cpiLong > 0 ? `<div><span>با تورم، مبنای ۱۳۸۸–۱۳۹۷</span><b>${M(cpiLong)} میلیون${P > 0 ? " — آگهی " + sgn(pct(cpiLong)) : ""}</b></div>` : ""}
+      ${cpiRecent > 0 ? `<div><span>با تورم، مبنای ۱۴۰۰–۱۴۰۳</span><b>${M(cpiRecent)} میلیون${P > 0 ? " — آگهی " + sgn(pct(cpiRecent)) : ""}</b></div>` : ""}
+      ${yieldPct > 0 ? `<div><span>بازده اجاره ناخالص</span><b>${yieldPct.toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪ در سال</b></div>` : ""}
+    </div><p class="muted small">اعداد: قیمت منصفانه هر متر (میلیون تومان).</p><ul>${s.map(x => `<li>${x}</li>`).join("")}</ul>
+    <p class="muted small">این تحلیل خودکار و بر پایه داده‌های آماری است و جایگزین بازدید و کارشناسی نیست.</p>`;
+}
+function iranCmpTool(ad, kind, q, rate) {
+  const city = DFP_IRAN[kind].city[ad.city], k = store.get("tool:icmp" + kind, "");
+  const names = Object.keys(city.nb).map(s => [s, s.replace(/-/g, " ")]).sort((a, b) => a[1].localeCompare(b[1]));
+  if (!names.length) return "<p>برای محله‌های این شهر آگهی کافی نبود.</p>";
+  const here = iranRange(ad, kind, q, rate); let res = "";
+  if (k && city.nb[k]) { const t = iranRange({ ...ad, slug: k, hood: k }, kind, q, rate), d = Math.round((t.mid / here.mid - 1) * 100);
+    res = `همین واحد در ${k.replace(/-/g, " ")}: <b>${kind === "sale" ? B(t.mid * rate * (ad.area || 1)) + (ad.area ? " میلیارد" : "") : M(t.mid * ad.area) + " میلیون در ماه"}</b> — ${fa(Math.abs(d))}٪ ${d >= 0 ? "گران‌تر" : "ارزان‌تر"}`; }
+  return `<label>محله (نام لاتین دیوار)<select data-tool="icmp${kind}">${opts([["", "انتخاب کنید"]].concat(names), k)}</select></label><p>${res}</p>`;
+}
+function cityHistTool(ad, q, rate) {
+  const H = DFP_CITYHIST[ad.city], yrs = Object.keys(H).map(Number).sort((a, b) => b - a), y = +store.get("tool:chist", 1395);
+  const v = cityPast(ad, q, rate, y);
+  return `<label>سال<select data-tool="chist">${opts(yrs.map(x => [x, fa(x).replace(/٬/g, "")]), y)}</select></label>
+    <p>${v > 0 ? `حدود <b>${M(v)} میلیون</b> تومان هر متر${ad.area ? ` (کل ${B(v * ad.area)} میلیارد)` : ""}` : "داده کافی نیست."}<br>
+    <span class="muted small">${y <= 1396 ? "بر اساس آمار شش‌ماهه مرکز آمار برای " + (ad.cityFa || ad.city) : "۱۳۹۷ تا ۱۴۰۳: پل‌زدن بین آخرین آمار مرکز آمار و سطح آگهی‌های ۱۴۰۳ دیوار، با شکل روند تهران"}</span></p>`;
+}
+function cityInflTool(ad, q, rate) {
+  const H = DFP_CITYHIST[ad.city], yrs = Object.keys(H).map(Number).sort((a, b) => a - b), sel = store.get("tool:cinfl", "avg");
+  const ys = sel === "avg" ? yrs.filter(y => y >= 1388 && y <= 1397) : sel === "recent" ? yrs.filter(y => y >= 1400) : [+sel];
+  const v = cityInfl(ad, q, rate, ys), d = ad.ppm > 0 ? Math.round((ad.ppm / v - 1) * 100) : null;
+  const list = [["avg", "میانگین ۱۳۸۸ تا ۱۳۹۷"], ["recent", "میانگین ۱۴۰۰ تا ۱۴۰۳"]].concat(yrs.filter(y => DFP_INFL.years[y]).map(y => [y, fa(y).replace(/٬/g, "")]));
+  return `<label>سال مبنا<select data-tool="cinfl">${opts(list, sel)}</select></label><p>${v > 0 ? `حدود <b>${M(v)} میلیون</b> هر متر به قیمت امروز` + (d !== null ? ` — قیمت آگهی ${fa(Math.abs(d))}٪ ${d >= 0 ? "بالاتر" : "پایین‌تر"}` : "") : "داده کافی نیست."}</p>`;
+}
 function histTool(ad, dist, q) {
   const H = DFP_HIST, sel = +store.get("tool:hist", 140007);
   const list = H.months.slice().reverse().map(x => [x, `${H.src && H.src[x] === "sci" ? (x % 100 === 3 ? "نیمه اول" : "نیمه دوم") : MON[x % 100 - 1]} ${fa(Math.floor(x / 100)).replace(/٬/g, "")}`]);
@@ -298,7 +374,7 @@ function inflTool(ad, dist, q) {
 }
 function rentHistTool(ad, q, rate) {
   const I = DFP_INFL, yrs = Object.keys(I.years).map(Number).sort((a, b) => b - a), y = +store.get("tool:rhist", 1400);
-  const past = rentRange(ad, q).mid * ad.area * rentIdx(y * 100 + 6) / rentIdx(DFP_RENTIDX.now);
+  const past = (ad.iran ? iranRange(ad, "rent", q, 0) : rentRange(ad, q)).mid * ad.area * rentIdx(y * 100 + 6) / rentIdx(DFP_RENTIDX.now);
   return `<label>سال<select data-tool="rhist">${opts(yrs.map(v => [v, fa(v).replace(/٬/g, "")]), y)}</select></label><p>حدود <b>${M(past)} میلیون</b> اجاره ماهانه معادل (ودیعه کامل ${B(past / rate)} میلیارد)</p>`;
 }
 function rentCmpTool(ad, q) {

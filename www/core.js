@@ -176,3 +176,40 @@ function comPast(ad, cat, q, rate, y) {    // same unit in year y (sale: along T
   const cityY = v.reduce((a, b) => a + b, 0) / v.length;
   return f.mid / (bands("3y")[0][2] * rate) * cityY;
 }
+
+// ---- other cities (asking-price level of 1403, carried to today along Tehran's path: dollar-based fair price for sale, rent index for rent)
+function iranRange(ad, kind, q, rate) {
+  const M0 = DFP_IRAN[kind], F = M0.feat, city = M0.city[ad.city]; if (!city) return null;
+  const nb = ad.slug && city.nb[ad.slug], parts = [];
+  const bin = (tbl, x) => { for (const [lo, hi, f] of tbl) if (x >= lo && x <= hi) return f; return 1; };
+  const age = ad.year ? jyNow() - ad.year : null;
+  let k = 1;
+  if (age !== null) { k *= bin(F.age, age); parts.push(`بنای ${fa(age)} ساله`); } else k *= F.age_na;
+  if (ad.floor !== null && ad.floor !== undefined) { const R = DFP_COEF.floor_rule; k *= Math.pow(1 + R.step, ad.floor - R.base) / R.norm; parts.push(`طبقه ${fa(ad.floor)}`); }
+  if (ad.area > 0) k *= bin(F.size, ad.area);
+  const pk = ad.area > 0 ? bin(F.parking_by_size, ad.area) : 1.1;
+  const np = q && q.npark !== "" && q.npark !== undefined ? +q.npark : (ad.parking === false ? 0 : ad.parking === true ? Math.max(1, ad.npark || 1) : null);
+  if (np === null) k *= Math.pow(pk, F.share.parking); else { if (np >= 1) k *= pk; if (np > 1 && ad.area > 0) k *= 1 + (np - 1) * DFP_COEF.extra_parking_m2 / ad.area; parts.push(np ? `${fa(np)} پارکینگ` : "بدون پارکینگ"); }
+  for (const f of ["elevator", "warehouse"]) k *= ad[f] === true ? F[f] : ad[f] === false ? 1 : Math.pow(F[f], F.share[f]);
+  const Q = DFP_COEF.quality; let lo = nb ? nb.lo : city.lo, hi = nb ? nb.hi : city.hi;
+  for (const [key, label] of [["street", "موقعیت"], ["plan", "نقشه"]]) { const v = q && q[key]; if (v && Q[key][v]) { k *= Q[key][v]; lo = 1 - (1 - lo) * Q.shrink; hi = 1 + (hi - 1) * Q.shrink; } }
+  const dd = kind === "sale" && q && q.deed && DFP_COEF.deed[q.deed]; if (dd && q.deed !== "single") { k *= dd[0]; parts.push(dd[1]); }
+  const now = kind === "sale" ? (rate > 0 ? bands("3y")[0][2] * rate / cityOfficial1403() : NaN) : rentIdx(DFP_RENTIDX.now) / rentIdx(DFP_RENTIDX.sample);
+  const mid = city.level * now * (nb ? Math.exp(nb.fe) : 1) * k / (kind === "sale" ? rate : 1);   // sale in USD/m2 (like fairRange), rent in toman/m2
+  return { lo: mid * lo, mid, hi: mid * hi, how: (nb ? `محله ${ad.hood || ad.slug} (${fa(nb.n)} آگهی مرجع)` : `سطح کل شهر ${ad.cityFa || ad.city} (${fa(city.n)} آگهی)`) + (parts.length ? "، " + parts.join("، ") : "") };
+}
+
+// ---- other cities: same unit in year y (toman/m2), and CPI-carried value from a base year
+function cityUnit1403(ad, q, rate) {             // this unit at the city's 1403 price level (toman/m2)
+  const f = iranRange(ad, "sale", q, rate); if (!f) return NaN;
+  return f.mid * rate / (bands("3y")[0][2] * rate / cityOfficial1403());
+}
+function cityPast(ad, q, rate, y) {
+  const H = DFP_CITYHIST[ad.city], lvl = DFP_IRAN.sale.city[ad.city].level;
+  return H && H[y] ? cityUnit1403(ad, q, rate) * H[y] / lvl : NaN;
+}
+function cityInfl(ad, q, rate, ys) {
+  const H = DFP_CITYHIST[ad.city], I = DFP_INFL, lvl = DFP_IRAN.sale.city[ad.city].level;
+  const v = ys.filter(y => H[y] && I.years[y]).map(y => H[y] * I.now.cpi / I.years[y][1]).sort((a, b) => a - b);
+  return v.length ? cityUnit1403(ad, q, rate) * v[Math.floor(v.length / 2)] / lvl : NaN;
+}
