@@ -62,52 +62,140 @@ function showTab(name) {
 }
 
 // ---------- manual estimate
+// Quality of the unit's position inside its neighborhood: 5 tiers x 3 alley strengths = 15 cells.
+// Each cell is a z-score on the neighborhood's OWN price spread (quartiles lo/hi from the fitted data), spaced 0.2 apart.
+const QUAL = [["top", "عالی"], ["good", "خوب"], ["mid", "متوسط"], ["weak", "ضعیف"], ["vweak", "خیلی ضعیف"]];
+const ALLEY = [["strong", "قوی"], ["mid", "متوسط"], ["weak", "ضعیف"]];
+const ZQ = { top: 1.2, good: 0.6, mid: 0, weak: -0.6, vweak: -1.2 }, ZA = { strong: 0.2, mid: 0, weak: -0.2 }, IQR_Z = 0.6745;
+const nq = s => norm(String(s || "")).toLowerCase();
+
+function spreadOf(kind, city, slug, dist) {              // {lo, hi} = p25/median, p75/median of the units in this neighborhood
+  state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
+  if (city === "tehran") {
+    if (kind === "rent") { const nb = slug && DFP_RENT.nb[slug]; return nb ? { lo: nb.lo, hi: nb.hi } : { lo: 0.85, hi: 1.15 }; }
+    const nb = slug && DFP_COEF.nb[slug]; if (nb) return { lo: nb.lo, hi: nb.hi };
+    const b = bands("3y")[dist || 0]; return { lo: b[1] / b[2], hi: b[3] / b[2] };
+  }
+  const c = DFP_IRAN[kind].city[city]; if (!c) return { lo: 0.9, hi: 1.1 };
+  const nb = slug && c.nb[slug]; return nb ? { lo: nb.lo, hi: nb.hi } : { lo: c.lo, hi: c.hi };
+}
+function qFactor(sp, qual, alley) {                       // multiplier on the neighborhood median
+  const z = ZQ[qual || "mid"] + ZA[alley || "mid"];
+  return z >= 0 ? Math.exp(z * Math.log(sp.hi) / IQR_Z) : Math.exp(-z * Math.log(sp.lo) / IQR_Z);
+}
+
 function fillSelect(sel, list, keep) {
   sel.innerHTML = list.map(([v, n]) => `<option value="${esc(v)}">${esc(n)}</option>`).join("");
-  if (keep && list.some(([v]) => v === keep)) sel.value = keep;
+  if (keep !== undefined && list.some(([v]) => v === keep)) sel.value = keep;
 }
-function manualHoods(city, kind) {
+const SUBS = { load: () => store.get("subareas", []), save: a => store.set("subareas", a) };
+function manualHoods(city, kind) {                        // [value, label]; sub-areas defined by the user follow their neighborhood
   let keys;
   if (city === "tehran") keys = Array.from(new Set(Object.keys(DFP_COEF.nb).concat(Object.keys(DFP_RENT.nb))));
   else { const c = DFP_IRAN[kind].city[city]; keys = c ? Object.keys(c.nb) : []; }
-  const nm = k => city === "tehran" ? (DFP_FA[k] || k) : k;
-  return [["", city === "tehran" ? "نامشخص (سطح کل تهران)" : "نامشخص (سطح کل شهر)"]].concat(keys.map(k => [k, nm(k)]).sort((a, b) => a[1].localeCompare(b[1], "fa")));
+  const nm = k => city === "tehran" ? (DFP_FA[k] || k) : k, subs = SUBS.load().filter(x => x.city === city);
+  const out = [];
+  keys.map(k => [k, nm(k)]).sort((a, b) => a[1].localeCompare(b[1], "fa")).forEach(([k, n]) => {
+    out.push([k, n]);
+    subs.filter(x => x.slug === k).forEach(x => out.push([k + "#" + x.id, `${n} ← ${x.name}`]));
+  });
+  return out;
 }
 function manualCities(kind) {
   const ks = Object.keys(DFP_IRAN[kind].city);
   return [["tehran", "تهران"]].concat(ks.map(k => [k, cityName(k)]).sort((a, b) => a[1].localeCompare(b[1], "fa")));
 }
+
 function initManual() {
   const g = id => document.getElementById(id);
   const kindEl = g("m-kind"), cityEl = g("m-city"), hoodEl = g("m-hood");
-  const syncHood = () => { fillSelect(hoodEl, manualHoods(cityEl.value, kindEl.value === "rent" ? "rent" : "sale")); };
-  const syncCity = () => { fillSelect(cityEl, manualCities(kindEl.value === "rent" ? "rent" : "sale"), cityEl.value); syncHood(); };
-  const syncPrice = () => { const r = kindEl.value === "rent"; g("m-sale-price").hidden = r; g("m-rent-price").hidden = !r; };
-  kindEl.onchange = () => { syncCity(); syncPrice(); };
-  cityEl.onchange = syncHood;
-  syncCity(); syncPrice();
-  g("m-go").onclick = async () => {
-    const err = t => { g("m-err").textContent = t || ""; };
+  let HOODS = [], CITIES = [];
+  const kindKey = () => kindEl.value === "rent" ? "rent" : "sale";
+  const curHood = () => { const [slug, sub] = (hoodEl.value || "").split("#"); return { slug: slug || "", sub: sub ? SUBS.load().find(x => x.id === sub && x.city === cityEl.value && x.slug === slug) : null }; };
+  const hoodFa = () => { const { slug, sub } = curHood(); if (!slug) return ""; const b = (cityEl.value === "tehran" ? (DFP_FA[slug] || slug) : slug).replace(/\s*\(.*\)\s*$/, ""); return b; };
+  const distOf = () => { const h = hoodFa(); return h ? (store.get("over", {})[norm(h)] ?? lookup(h)) : 0; };
+
+  // ---- search: filters the option list as the user types (matches Persian name, slug, sub-area name)
+  const filt = (selEl, list, qEl, cntEl, keep) => {
+    const qv = nq(qEl.value), prev = keep !== undefined ? keep : selEl.value;
+    const lst = qv ? list.filter(([v, l]) => nq(l).includes(qv) || nq(v).includes(qv)) : list;
+    const out = (selEl === hoodEl && !qv ? [["", cityEl.value === "tehran" ? "نامشخص (سطح کل تهران)" : "نامشخص (سطح کل شهر)"]] : []).concat(lst);
+    fillSelect(selEl, out.length ? out : [["", "موردی پیدا نشد"]], prev);
+    if (qv && lst.length && !lst.some(([v]) => v === prev)) selEl.value = lst[0][0];
+    cntEl.textContent = qv ? (lst.length ? fa(lst.length) + " مورد" : "موردی پیدا نشد") : "";
+  };
+  const refreshHoods = keep => { HOODS = manualHoods(cityEl.value, kindKey()); filt(hoodEl, HOODS, g("m-hood-q"), g("m-hood-cnt"), keep); onHood(); };
+  const refreshCities = () => { CITIES = manualCities(kindKey()); const keep = cityEl.value || "tehran"; filt(cityEl, CITIES, g("m-city-q"), g("m-city-cnt"), keep); if (!cityEl.value) cityEl.value = keep; };
+
+  // ---- quality / alley grid for the selected neighborhood
+  const pc = f => { const p = (f - 1) * 100; return (p > 0.05 ? "+" : p < -0.05 ? "−" : "") + Math.abs(p).toLocaleString("fa-IR", { maximumFractionDigits: 0 }) + "٪"; };
+  const renderGrid = () => {
+    const { slug } = curHood(), sp = spreadOf(kindKey(), cityEl.value, slug, distOf()), qs = g("m-qual").value, as = g("m-alley").value;
+    g("m-grid").innerHTML = `<thead><tr><th>کیفیت محله \ کوچه</th>${ALLEY.map(a => `<th>${a[1]}</th>`).join("")}</tr></thead><tbody>` +
+      QUAL.map(([qk, qn]) => `<tr><th>${qn}</th>${ALLEY.map(([ak]) => `<td class="${(qs || "mid") === qk && (as || "mid") === ak && (qs || as) ? "cell-on" : ""}">${pc(qFactor(sp, qk, ak))}</td>`).join("")}</tr>`).join("") + `</tbody>`;
+    g("m-sigma").textContent = `پراکندگی قیمت در این ${slug ? "محله" : "سطح"}: چارک پایین ${pc(sp.lo)} و چارک بالا ${pc(sp.hi)} نسبت به میانه`;
+    g("m-qcap").textContent = (qs || as) ? `ضریب کیفیت و کوچه: ${pc(qFactor(sp, qs, as))} نسبت به میانه محله` : "کیفیت و کوچه نامشخص: قیمت میانه محله با بازه کامل.";
+  };
+  const syncParking = () => { g("m-pcount-l").hidden = !(g("m-park").value === "1" && kindKey() === "sale"); };
+  const syncSubBtns = () => { const { slug, sub } = curHood(); g("m-subsave").hidden = !slug || !!sub || !(g("m-qual").value || g("m-alley").value); g("m-subdel").hidden = !sub; };
+  function onHood() {
+    const { sub } = curHood(); if (sub) { g("m-qual").value = sub.qual; g("m-alley").value = sub.alley; }
+    renderGrid(); syncSubBtns();
+  }
+
+  // ---- the estimate itself (reset=true on the button, false when a form field changes after the first estimate)
+  const err = t => { g("m-err").textContent = t || ""; };
+  async function runManual(reset) {
     const area = +g("m-area").value; if (!(area >= 10 && area <= 5000)) return err("متراژ را وارد کنید (۱۰ تا ۵۰۰۰ متر).");
     const year = +g("m-year").value, fl = g("m-floor").value;
     if (g("m-year").value && !(year > 1300 && year < 1500)) return err("سال ساخت را شمسی و چهار رقمی وارد کنید (مثلاً ۱۳۹۵).");
     err("");
     const tri = id => { const v = g(id).value; return v === "" ? null : v === "1"; };
-    const rent = kindEl.value === "rent", city = cityEl.value, slug = hoodEl.value;
-    const hoodFa = slug ? (city === "tehran" ? (DFP_FA[slug] || slug) : slug).replace(/\s*\(.*\)\s*$/, "") : "";
+    if (!cityEl.value) return err("شهر را انتخاب کنید.");
+    const rent = kindKey() === "rent", city = cityEl.value, { slug, sub } = curHood(), hf = hoodFa();
     const mil = id => { const v = parseFloat(g(id).value); return v >= 0 ? v : NaN; };
-    const ad = { title: `تخمین دستی — ${hoodFa || cityName(city)}`, type: rent ? "rent" : "sale", ppm: NaN, total: NaN, area, year: year > 1300 ? year : null,
+    const ad = { title: `تخمین دستی — ${hf || cityName(city)}${sub ? " ← " + sub.name : ""}`, type: rent ? "rent" : "sale", ppm: NaN, total: NaN, area, year: year > 1300 ? year : null,
       floor: fl === "" ? null : parseInt(fl, 10), deposit: NaN, rent: NaN, elevator: tri("m-elev"), parking: tri("m-park"), warehouse: tri("m-ware"), npark: 0,
-      slug, hood: hoodFa, city, cityFa: cityName(city), src: "", cat: "", comCat: "", iran: city !== "tehran" };
+      slug, hood: hf, city, cityFa: cityName(city), src: "", cat: "", comCat: "", iran: city !== "tehran" };
     if (rent) { const dep = mil("m-dep"), rn = mil("m-rent"); if (dep >= 0 || rn >= 0) { ad.deposit = dep >= 0 ? dep * 1e6 : 0; ad.rent = rn >= 0 ? rn * 1e6 : 0; } }
     else { const t = mil("m-total"); if (t > 0) { ad.total = t * 1e9; ad.ppm = ad.total / area; } }
-    store.set("q:manual", { street: "", plan: "", npark: "" });
+    const q = reset ? { street: "", plan: "", npark: "" } : store.get("q:manual", { street: "", plan: "", npark: "" });
+    const qs = g("m-qual").value, as = g("m-alley").value;
+    if (qs || as) { DFP_COEF.quality.street.mq = qFactor(spreadOf(rent ? "rent" : "sale", city, slug, distOf()), qs, as); q.street = "mq"; } else q.street = "";
+    const pk = g("m-park").value; q.npark = !rent && pk === "1" ? g("m-pcount").value : pk === "0" ? "0" : "";
+    store.set("q:manual", q);
     FX = FX || await getRate();
     PANE.manual.root = g("mreport"); setRoot(PANE.manual.root);
     AD = ad; TOKEN = "manual"; PANE.manual.AD = AD; PANE.manual.TOKEN = TOKEN;
     render();
-    g("mreport").scrollIntoView({ behavior: "smooth" });
+    if (reset) g("mreport").scrollIntoView({ behavior: "smooth" });
+  }
+  const live = () => { if (PANE.manual.AD) runManual(false); };
+
+  // ---- wiring
+  kindEl.onchange = () => { refreshCities(); refreshHoods(""); syncParking(); g("m-sale-price").hidden = kindKey() === "rent"; g("m-rent-price").hidden = kindKey() !== "rent"; live(); };
+  cityEl.onchange = () => { refreshHoods(""); live(); };
+  hoodEl.onchange = () => { onHood(); live(); };
+  g("m-city-q").oninput = () => { filt(cityEl, CITIES, g("m-city-q"), g("m-city-cnt")); refreshHoods(""); };
+  g("m-hood-q").oninput = () => { filt(hoodEl, HOODS, g("m-hood-q"), g("m-hood-cnt")); onHood(); };
+  g("m-qual").onchange = g("m-alley").onchange = () => { renderGrid(); syncSubBtns(); live(); };
+  g("m-park").onchange = () => { syncParking(); live(); };
+  ["m-pcount", "m-elev", "m-ware", "m-area", "m-year", "m-floor", "m-total", "m-dep", "m-rent"].forEach(id => g(id).addEventListener("change", live));
+  g("m-subsave").onclick = () => {
+    const { slug } = curHood(), name = (prompt("نام زیرمحله را بنویسید (مثلاً شمالی، جنوبی، نزدیک خیابان اصلی):") || "").trim(); if (!slug || !name) return;
+    const subs = SUBS.load(), id = Date.now().toString(36);
+    subs.push({ id, city: cityEl.value, slug, name, qual: g("m-qual").value || "mid", alley: g("m-alley").value || "mid" }); SUBS.save(subs);
+    g("m-hood-q").value = ""; refreshHoods(slug + "#" + id); live();
   };
+  g("m-subdel").onclick = () => {
+    const { slug, sub } = curHood(); if (!sub || !confirm("این زیرمحله حذف شود؟")) return;
+    SUBS.save(SUBS.load().filter(x => x.id !== sub.id)); refreshHoods(slug); live();
+  };
+  g("m-go").onclick = () => runManual(true);
+  new MutationObserver(() => g("mreport").querySelectorAll('select[data-q="street"],select[data-q="npark"]').forEach(s => { const l = s.closest("label"); if (l) l.style.display = "none"; }))
+    .observe(g("mreport"), { childList: true });
+  refreshCities(); refreshHoods(""); syncParking();
+  g("m-sale-price").hidden = false; g("m-rent-price").hidden = true;
 }
 
 // ---------- favorites

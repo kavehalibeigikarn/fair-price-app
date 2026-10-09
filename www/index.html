@@ -36,6 +36,7 @@ details{border-top:1px solid var(--line);padding:8px 0} summary{cursor:pointer;f
 .fav h3{font-size:15px;margin:2px 0}.selrow{flex-direction:row;align-items:center;gap:6px;float:left;font-size:12px}.selrow input{flex:none;width:auto}
 .fbtn{margin-top:8px;flex-wrap:wrap}.fbtn button{flex:1;padding:8px}
 .badge{padding:6px 10px;border-radius:8px;font-size:12px;background:color-mix(in srgb,var(--z3) 50%,transparent)}
+.cell-on{background:color-mix(in srgb,var(--z2) 55%,transparent);font-weight:700}
 .up{color:var(--above)}.down{color:var(--below)}
 .tbl{overflow-x:auto;margin:6px 0}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;vertical-align:top}
 table.cmp td,table.cmp th{min-width:84px}
@@ -61,15 +62,36 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
   <p class="muted small" style="margin-top:0">مشخصات ملک را وارد کنید تا قیمت (یا اجاره) منصفانه تخمین زده شود. قیمت درخواستی اختیاری است و اگر وارد کنید روی گیج نشان داده می‌شود.</p>
   <div class="f2">
     <label>نوع<select id="m-kind"><option value="sale">فروش آپارتمان</option><option value="rent">اجاره آپارتمان</option></select></label>
-    <label>شهر<select id="m-city"></select></label>
-    <label>محله<select id="m-hood"></select></label>
+    <label>شهر<input id="m-city-q" type="search" placeholder="جست‌وجوی شهر…"><select id="m-city"></select><small class="muted" id="m-city-cnt"></small></label>
+    <label>محله<input id="m-hood-q" type="search" placeholder="جست‌وجوی محله…"><select id="m-hood"></select><small class="muted" id="m-hood-cnt"></small></label>
     <label>متراژ (متر) *<input id="m-area" type="number" inputmode="numeric" placeholder="مثلاً ۸۰"></label>
     <label>سال ساخت (شمسی)<input id="m-year" type="number" inputmode="numeric" placeholder="مثلاً ۱۳۹۵"></label>
     <label>طبقه (۰ = همکف)<input id="m-floor" type="number" inputmode="numeric" placeholder="نامشخص"></label>
     <label>آسانسور<select id="m-elev"><option value="">نامشخص</option><option value="1">دارد</option><option value="0">ندارد</option></select></label>
     <label>پارکینگ<select id="m-park"><option value="">نامشخص</option><option value="1">دارد</option><option value="0">ندارد</option></select></label>
+    <label id="m-pcount-l" hidden>تعداد پارکینگ<select id="m-pcount"><option value="1">۱</option><option value="2">۲</option><option value="3">۳</option></select></label>
     <label>انباری<select id="m-ware"><option value="">نامشخص</option><option value="1">دارد</option><option value="0">ندارد</option></select></label>
   </div>
+  <h2 style="margin-top:14px">کیفیت محله و کوچه</h2>
+  <div class="f2">
+    <label>کیفیت ملک در همین محله<select id="m-qual"><option value="">نامشخص</option><option value="top">عالی</option><option value="good">خوب</option><option value="mid">متوسط</option><option value="weak">ضعیف</option><option value="vweak">خیلی ضعیف</option></select></label>
+    <label>کوچه / معبر<select id="m-alley"><option value="">نامشخص</option><option value="strong">قوی</option><option value="mid">متوسط</option><option value="weak">ضعیف</option></select></label>
+  </div>
+  <p class="small" id="m-qcap"></p>
+  <div class="row" style="flex-wrap:wrap"><button class="ghost" id="m-subsave" hidden>ذخیره این انتخاب به‌عنوان زیرمحله (مثلاً شمالی/جنوبی)</button><button class="ghost" id="m-subdel" hidden>حذف این زیرمحله</button></div>
+  <details id="m-explain"><summary>روش قیمت‌گذاری کیفیت محله و کوچه</summary>
+    <p class="small" id="m-sigma"></p>
+    <div class="tbl"><table id="m-grid" class="cmp"></table></div>
+    <div class="small" style="line-height:1.9">
+      <p><b>قیمت پایه:</b> میانه قیمت آپارتمان‌های همان محله، برای ملکی با همان متراژ، سن، طبقه، پارکینگ و امکانات (مدل برازش‌شده روی آگهی‌ها و معاملات).</p>
+      <p><b>کیفیت محله (۵ سطح)</b> یعنی ملک شما در کدام قسمت همان محله قرار دارد: <b>عالی</b> بهترین بخش‌ها (کنار خیابان اصلی یا مترو، بافت نو، آرام و امن)، <b>خوب</b>، <b>متوسط</b>، <b>ضعیف</b> و <b>خیلی ضعیف</b> (حاشیه محله، نزدیک بافت فرسوده یا پرسروصدا). برای محله‌ای که داده‌اش شمالی و جنوبی را با هم دارد (مثل جمالزاده)، قسمت شمالی را «خوب» یا «عالی» و قسمت جنوبی را «ضعیف» بزنید، یا همان را به‌عنوان زیرمحله ذخیره کنید.</p>
+      <p><b>کوچه (۳ سطح)</b> قوی، متوسط یا ضعیف (عرض، تردد، دسترسی، شأن کوچه). کوچه، جایگاه را داخل همان سطح کیفیت جابه‌جا می‌کند.</p>
+      <p><b>۱۵ حالت:</b> هر ترکیب کیفیت × کوچه یک نمره روی «ترازوی پراکندگی قیمت همان محله» می‌گیرد: کیفیت عالی ۱٫۲+ ، خوب ۰٫۶+ ، متوسط ۰ ، ضعیف ۰٫۶− ، خیلی ضعیف ۱٫۲− ؛ کوچه قوی ۰٫۲+ ، متوسط ۰ ، ضعیف ۰٫۲− . پس ۱۵ حالت با فاصله مساوی از ۱٫۴+ تا ۱٫۴− می‌نشینند. ضریب قیمت = e به توان (نمره × پراکندگی محله). پراکندگی محله از چارک‌های واقعی قیمت ملک‌های همان محله در داده به دست می‌آید (جدول بالا). محله‌ای که قیمتش بین قسمت‌هایش اختلاف زیادی دارد، فاصله حالت‌هایش هم بیشتر است و محله یکدست اختلاف کمی دارد.</p>
+      <p><b>نقشه (و مشاعات ساختمان)</b> جدا اعمال می‌شود: عالی ۵٪+ ، خوب ۲٫۵٪+ ، ضعیف ۳٪− ، خیلی ضعیف ۶٪−.</p>
+      <p><b>قیمت نهایی</b> = میانه محله (دلاری) × ضرایب سن، طبقه، متراژ، پارکینگ و امکانات × ضریب کیفیت-کوچه × ضریب نقشه × ضریب سند × نرخ دلار. با انتخاب کیفیت یا کوچه، بازه منصفانه ۲۰٪ باریک‌تر می‌شود چون جایگاه ملک دقیق‌تر مشخص شده است.</p>
+      <p class="muted">حد داده: داده دیوار فقط یک محله واحد (مثلاً «جمالزاده») دارد و شمالی/جنوبی ندارد، پس تفاوت زیرمحله‌ها را فقط از راه این ۱۵ حالت می‌شود اعمال کرد، نه از قیمت اختصاصی آن قسمت. هر چه کیفیت و کوچه را دقیق‌تر بشناسید، تخمین بهتر است.</p>
+    </div>
+  </details>
   <div class="f2" id="m-sale-price"><label>قیمت کل درخواستی (میلیارد تومان) — اختیاری<input id="m-total" type="number" inputmode="decimal" step="any" placeholder="مثلاً ۸٫۵"></label></div>
   <div class="f2" id="m-rent-price" hidden><label>ودیعه/رهن (میلیون تومان) — اختیاری<input id="m-dep" type="number" inputmode="decimal" step="any"></label>
     <label>اجاره ماهانه (میلیون تومان) — اختیاری<input id="m-rent" type="number" inputmode="decimal" step="any"></label></div>
