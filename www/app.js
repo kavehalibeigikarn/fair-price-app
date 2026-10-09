@@ -14,6 +14,8 @@ const REPORT_CSS = `.dfp{--bg:#f6f4ef;--card:#fff;--ink:#23211d;--muted:#7a7468;
 .dfp .fair span{display:block;font-size:13px;color:var(--muted)}.dfp .fair b{display:block;font-size:22px}.dfp .fair small{color:var(--muted)}
 .dfp details{border-top:1px solid var(--line);padding:8px 0}.dfp summary{cursor:pointer;font-weight:700;font-size:14px}
 .dfp .premium summary{color:var(--accent)}.dfp ul{margin:6px 0;padding-right:18px}.dfp li{margin:4px 0}
+.dfp .edit input{font:inherit;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+.dfp .reset{font:inherit;font-size:12px;border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:6px;padding:6px;cursor:pointer;align-self:end}
 .dfp .muted{color:var(--muted)}.dfp .small{font-size:12px}.dfp .err{color:var(--above)}
 .dfp select:focus-visible,.dfp summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}`;
 // ---------- helpers
@@ -174,11 +176,33 @@ async function analyzeToken(token) {
 }
 
 function render() {
-  const ad = AD, q = store.get("q:" + TOKEN, { street: "", plan: "", npark: "" });
+  const q = store.get("q:" + TOKEN, { street: "", plan: "", npark: "" });
+  // user corrections of area / build year (listings sometimes inflate area or understate age); total price stays as advertised
+  const ad = { ...AD }, origArea = AD.comCat === "plot-old" ? (AD.land || AD.area) : AD.area;
+  const total = AD.total > 0 ? AD.total : (AD.ppm > 0 && AD.area > 0 ? AD.ppm * AD.area : NaN);
+  if (q.area > 0) { if (AD.comCat === "plot-old") ad.land = q.area; else ad.area = q.area; if (ad.type === "sale" && total > 0) ad.ppm = total / q.area; }
+  if (q.year > 1300) ad.year = q.year;
+  const edited = (q.area > 0 && q.area !== origArea) || (q.year > 1300 && q.year !== AD.year);
   if (!q.deed) q.deed = ad.deed || "single";
   const deedList = ad.type === "com" && /shop/.test(ad.comCat) ? ["single", "sarghofli", "written", "awqaf"] : ["single", "multi", "written", "awqaf", "other"];
   const deedSel = `<label>${ad.type === "com" && /shop/.test(ad.comCat) ? "نوع مالکیت / سند" : "نوع سند"}${ad.deed ? " (از آگهی)" : ""}<select data-q="deed">${opts(deedList.map(k => [k, k === "single" && /shop/.test(ad.comCat || "") ? "ملکیت، تک‌برگ" : DFP_COEF.deed[k][1]]), q.deed)}</select></label>`;
   const dist = store.get("over", {})[norm(ad.hood)] ?? lookup(ad.hood);
+  const edit = `<div class="grid edit">
+      <label>متراژ${AD.comCat === "plot-old" ? " زمین" : ""} (آگهی: ${origArea ? fa(origArea) : "نامشخص"})<input data-e="area" type="number" inputmode="numeric" value="${q.area > 0 ? q.area : (origArea || "")}"></label>
+      <label>سال ساخت (آگهی: ${AD.year ? fa(AD.year).replace(/٬/g, "") : "نامشخص"})<input data-e="year" type="number" inputmode="numeric" value="${q.year > 1300 ? q.year : (AD.year || "")}"></label>
+      ${edited ? `<button class="reset" data-e="reset">برگشت به مشخصات آگهی</button>` : ""}
+    </div>${edited ? `<p class="muted small">⚠ محاسبه با مشخصات ویرایش‌شده انجام شده؛ قیمت کل آگهی ثابت فرض شده.</p>` : ""}`;
+  const bindEdit = () => {
+  ROOT.querySelectorAll("[data-e]").forEach(el => {
+    const ev = el.tagName === "BUTTON" ? "onclick" : "onchange";
+    el[ev] = () => {
+      if (el.dataset.e === "reset") { delete q.area; delete q.year; }
+      else { const v = +el.value; if (el.dataset.e === "area") { if (v >= 5 && v <= 20000) q.area = v; else delete q.area; }
+             else { if (v > 1300 && v < 1500) q.year = v; else delete q.year; } }
+      store.set("q:" + TOKEN, q); render();
+    };
+  });
+  };
   const head = `<h2>${ad.title || "آگهی دیوار"}</h2><p class="muted">${[ad.hood, ad.area && fa(ad.area) + " متر", ad.year && "ساخت " + fa(ad.year).replace(/٬/g, ""), ad.floor !== null && "طبقه " + fa(ad.floor)].filter(Boolean).join(" · ")}</p>`;
   const qrow = `<div class="grid">
       <label>موقعیت در محله<select data-q="street">${opts(QOPT, q.street)}</select></label>
@@ -224,7 +248,7 @@ function render() {
     state.mode = store.get("mode", "m24"); state.win = store.get("win", "3y");
     const rate = store.get("fxManual", 0) || (FX && FX[state.mode]) || 0, rr = store.get("rentRate", DFP_RENT.rate);
     const f = comRange(ad, ad.comCat, q, rate), S = f.size, unitTxt = C.unit === "land" ? "متر زمین" : "متر";
-    if (!(S > 0) || !(f.mid > 0)) { ROOT.innerHTML = head + `<p class="err">${S > 0 ? "نرخ دلار دریافت نشد؛ از آگهی فروش آپارتمان نرخ را دستی وارد کنید یا کمی بعد دوباره امتحان کنید." : "متراژ آگهی خوانده نشد."}</p>`; return; }
+    if (!(S > 0) || !(f.mid > 0)) { ROOT.innerHTML = head + edit + `<p class="err">${S > 0 ? "نرخ دلار دریافت نشد؛ از آگهی فروش آپارتمان نرخ را دستی وارد کنید یا کمی بعد دوباره امتحان کنید." : "متراژ آگهی خوانده نشد."}</p>`; bindEdit(); return; }
     const val = C.kind === "rent" ? ((ad.deposit >= 0 && ad.rent >= 0 && (ad.deposit > 0 || ad.rent > 0)) ? (ad.rent + ad.deposit * rr) / S : NaN)
                                   : (ad.total > 0 ? ad.total / S : NaN);
     const [vt, vc] = verdict(val, f), per = x => C.kind === "rent" ? M(x * S) + " میلیون در ماه" : B(x * S) + " میلیارد";
@@ -250,7 +274,7 @@ function render() {
       <p class="muted small">داده: آگهی‌های ۱۴۰۳ دیوار (ODbL). برای ${C.label} آمار رسمی معامله وجود ندارد؛ دقت کمتر از آپارتمان است.</p>`;
   } else {
     const rate = store.get("rentRate", DFP_RENT.rate);
-    if (!(ad.area > 0)) { ROOT.innerHTML = head + `<p class="err">متراژ آگهی خوانده نشد؛ بدون متراژ نمی‌شود اجاره منصفانه را حساب کرد.</p>`; return; }
+    if (!(ad.area > 0)) { ROOT.innerHTML = head + edit + `<p class="err">متراژ آگهی خوانده نشد؛ بدون متراژ نمی‌شود اجاره منصفانه را حساب کرد.</p>`; bindEdit(); return; }
     const known = ad.deposit >= 0 && ad.rent >= 0 && (ad.deposit > 0 || ad.rent > 0);
     const f = ad.iran ? iranRange(ad, "rent", q, 0) : rentRange(ad, q), eq = known ? ad.rent + ad.deposit * rate : NaN, epm = eq / ad.area, [vt, vc] = verdict(epm, f);
     const fairRent = known ? f.mid * ad.area - ad.deposit * rate : NaN;
@@ -275,8 +299,9 @@ function render() {
       : `<details><summary>اجاره همین واحد در گذشته</summary>${rentHistTool(ad, q, rate)}</details>
       <details><summary>مقایسه با محله دیگر</summary>${rentCmpTool(ad, q)}</details>`}`;
   }
-  ROOT.innerHTML = head + body;
+  ROOT.innerHTML = head + edit + body;
   ROOT.querySelectorAll("[data-q]").forEach(el => el.onchange = () => { q[el.dataset.q] = el.value; store.set("q:" + TOKEN, q); render(); });
+  bindEdit();
   const on = (id, fn) => { const el = $(id); if (el) el.onchange = fn; };
   on("#win", e => { store.set("win", e.target.value); render(); });
   on("#mode", e => { store.set("mode", e.target.value); render(); });
