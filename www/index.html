@@ -3,55 +3,105 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>قیمت منصفانه</title>
+<script>try{var t=JSON.parse(localStorage.getItem("dfp:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <style>
-:root{--bg:#f6f4ef;--card:#fff;--ink:#23211d;--muted:#7a7468;--line:#e3ded3;--accent:#1f5f5b;--z1:#cfe8d3;--z2:#9fd0c8;--z3:#f3d9a8;--below:#2e7d3f;--above:#a2620b}
-@media (prefers-color-scheme:dark){:root{--bg:#171614;--card:#221f1b;--ink:#eee8dc;--muted:#a39c8e;--line:#3a352e;--accent:#6cc0b5;--z1:#2f5a39;--z2:#2c6a63;--z3:#6d5424;--below:#7ccf8e;--above:#e0a95a}}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Vazirmatn,"Noto Naskh Arabic",Tahoma,sans-serif;line-height:1.7}
-body{padding:calc(env(safe-area-inset-top,0px) + 12px) 14px calc(env(safe-area-inset-bottom,0px) + 24px)}
-h1{font-size:20px;margin:4px 0 12px} h2{font-size:17px;margin:0 0 2px}
-.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
-.row{display:flex;gap:8px} input{flex:1;min-width:0;direction:ltr;font:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
-button{font:inherit;font-size:14px;padding:10px 14px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
-button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
-select{font:inherit;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
-label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:12px 0}
-.cards{display:grid;gap:8px;margin:10px 0} .cards div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding:4px 0}
-.cards span{color:var(--muted);font-size:13px} .cards b{font-size:14px;text-align:left}
+:root{
+  --a-bg:#f2efe7;--a-bg2:#f8f6f0;--a-card:#fffdf9;--a-ink:#1d2321;--a-muted:#6b7773;--a-line:#e3ded1;--a-accent:#12706a;--a-accent2:#1e9a8d;--a-onaccent:#ffffff;
+  --a-z1:#cfe8d3;--a-z2:#9fd0c8;--a-z3:#f3d9a8;--a-below:#2a7a3a;--a-above:#a2620b;--a-shadow:0 1px 2px rgba(40,35,20,.06),0 8px 24px rgba(40,35,20,.07);--a-glow:rgba(18,112,106,.12);
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --a-bg:#0e1413;--a-bg2:#121b1a;--a-card:#172120;--a-ink:#e9f0ed;--a-muted:#92a39e;--a-line:#26342f;--a-accent:#52d4c3;--a-accent2:#2fa99b;--a-onaccent:#04211d;
+  --a-z1:#2f5a39;--a-z2:#2c6a63;--a-z3:#6d5424;--a-below:#7ccf8e;--a-above:#e6b068;--a-shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35);--a-glow:rgba(82,212,195,.14);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --a-bg:#0e1413;--a-bg2:#121b1a;--a-card:#172120;--a-ink:#e9f0ed;--a-muted:#92a39e;--a-line:#26342f;--a-accent:#52d4c3;--a-accent2:#2fa99b;--a-onaccent:#04211d;
+  --a-z1:#2f5a39;--a-z2:#2c6a63;--a-z3:#6d5424;--a-below:#7ccf8e;--a-above:#e6b068;--a-shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35);--a-glow:rgba(82,212,195,.14);color-scheme:dark}
+:root,html body .dfp{--bg:var(--a-bg);--card:var(--a-card);--ink:var(--a-ink);--muted:var(--a-muted);--line:var(--a-line);--accent:var(--a-accent);--z1:var(--a-z1);--z2:var(--a-z2);--z3:var(--a-z3);--below:var(--a-below);--above:var(--a-above)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--a-bg)}
+html,body{margin:0;color:var(--a-ink);font-family:Vazirmatn,"Noto Sans Arabic","Noto Naskh Arabic",system-ui,Tahoma,sans-serif;line-height:1.75;transition:background-color .25s,color .25s}
+body{background:radial-gradient(1200px 380px at 50% -120px,var(--a-glow),transparent 70%),var(--a-bg);padding:calc(env(safe-area-inset-top,0px) + 10px) 14px calc(env(safe-area-inset-bottom,0px) + 92px);max-width:720px;margin:0 auto;min-height:100vh}
+.top{display:flex;align-items:center;gap:12px;margin:2px 2px 14px}
+.logo{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,var(--a-accent2),var(--a-accent));color:var(--a-onaccent);box-shadow:0 6px 16px var(--a-glow)}
+.logo svg{width:24px;height:24px;margin:0}
+.top h1{margin:0;font-size:20px;line-height:1.25;letter-spacing:-.2px} .top p{margin:0;font-size:12px;color:var(--a-muted)}
+.top .grow{flex:1}
+#theme{width:42px;height:42px;padding:0;border-radius:14px;background:var(--a-card);color:var(--a-accent);border:1px solid var(--a-line);box-shadow:var(--a-shadow);display:grid;place-items:center}
+#theme svg{width:21px;height:21px;margin:0}
+h2{font-size:16px;margin:0 0 4px} h3{font-size:15px}
+.box{background:var(--a-card);border:1px solid var(--a-line);border-radius:20px;padding:16px;margin-bottom:14px;box-shadow:var(--a-shadow)}
+.row{display:flex;gap:8px}
+input,select,textarea{flex:1;min-width:0;font:inherit;font-size:14px;color:var(--a-ink);background:var(--a-bg2);border:1px solid var(--a-line);border-radius:12px;padding:11px 12px;transition:border-color .15s,box-shadow .15s}
+input{direction:ltr} textarea{direction:rtl;resize:vertical;width:100%}
+input::placeholder,textarea::placeholder{color:var(--a-muted);opacity:.7}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--a-accent);box-shadow:0 0 0 3px var(--a-glow)}
+select{width:100%;padding:10px 8px}
+button{font:inherit;font-size:14px;font-weight:600;min-height:44px;padding:10px 16px;border:0;border-radius:12px;background:linear-gradient(135deg,var(--a-accent2),var(--a-accent));color:var(--a-onaccent);cursor:pointer;transition:transform .08s,filter .15s}
+button:active{transform:scale(.97)} button:hover{filter:brightness(1.05)} button:disabled{opacity:.55}
+button.ghost{background:transparent;color:var(--a-accent);border:1.5px solid var(--a-accent);font-weight:600}
+button.mini{min-height:34px;padding:4px 10px;font-size:12px;border-radius:10px}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--a-muted);gap:4px}
+.f2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:12px 0;align-items:start}
+.f2 input{direction:rtl;text-align:right} .f2 .wide{grid-column:1/-1}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}
+.cards{display:grid;gap:2px;margin:10px 0} .cards div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--a-line);padding:6px 0}
+.cards span{color:var(--a-muted);font-size:13px} .cards b{font-size:14px;text-align:left}
 svg{width:100%;max-width:360px;display:block;margin:6px auto 0}
-.verdict{text-align:center;font-weight:700;font-size:17px;margin:4px 0}
-.verdict.below{color:var(--below)} .verdict.above{color:var(--above)} .verdict.fair{color:var(--accent)}
-details{border-top:1px solid var(--line);padding:8px 0} summary{cursor:pointer;font-weight:700;font-size:14px}
-.fair{text-align:center;margin:8px 0 4px;padding:10px;border-radius:10px;background:color-mix(in srgb,var(--z2) 35%,transparent)}
-.fair span{display:block;font-size:13px;color:var(--muted)} .fair b{display:block;font-size:22px} .fair small{color:var(--muted)}
-.tabs{display:flex;gap:6px;margin:0 0 12px;position:sticky;top:0;z-index:5;background:var(--bg);padding:4px 0}
-.tabs button{flex:1;background:transparent;color:var(--accent);border:1px solid var(--accent);padding:8px 4px;font-size:13px}
-.tabs button.on{background:var(--accent);color:#fff}
+.verdict{text-align:center;font-weight:800;font-size:17px;margin:6px 0}
+.verdict.below{color:var(--a-below)} .verdict.above{color:var(--a-above)} .verdict.fair{color:var(--a-accent)}
+.fair{text-align:center;margin:10px 0 6px;padding:14px;border-radius:16px;background:linear-gradient(160deg,color-mix(in srgb,var(--a-z2) 38%,transparent),color-mix(in srgb,var(--a-z1) 30%,transparent));border:1px solid color-mix(in srgb,var(--a-z2) 60%,transparent)}
+.fair span{display:block;font-size:13px;color:var(--a-muted)} .fair b{display:block;font-size:24px;letter-spacing:-.3px} .fair small{color:var(--a-muted)}
+details{border-top:1px solid var(--a-line);padding:10px 0} summary{cursor:pointer;font-weight:700;font-size:14px;list-style:none;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none} summary::before{content:"";width:8px;height:8px;border-left:2px solid var(--a-accent);border-bottom:2px solid var(--a-accent);transform:rotate(45deg);transition:transform .2s;margin-inline-end:2px;flex:none}
+details[open]>summary::before{transform:rotate(-45deg)}
+.muted{color:var(--a-muted)} .small{font-size:12px} .err{color:var(--a-above)}
+:focus-visible{outline:2px solid var(--a-accent);outline-offset:2px}
 [hidden]{display:none!important}
-.f2{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:10px 0}
-.f2 input{direction:rtl;text-align:right}
-.fav{border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0;background:var(--bg)} .fav.gone{opacity:.85;border-style:dashed}
-.fav h3{font-size:15px;margin:2px 0}.selrow{flex-direction:row;align-items:center;gap:6px;float:left;font-size:12px}.selrow input{flex:none;width:auto}
-.fbtn{margin-top:8px;flex-wrap:wrap}.fbtn button{flex:1;padding:8px}
-.badge{padding:6px 10px;border-radius:8px;font-size:12px;background:color-mix(in srgb,var(--z3) 50%,transparent)}
-.cell-on{background:color-mix(in srgb,var(--z2) 55%,transparent);font-weight:700}
-.up{color:var(--above)}.down{color:var(--below)}
-.tbl{overflow-x:auto;margin:6px 0}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:right;vertical-align:top}
+/* bottom navigation */
+.nav{position:fixed;inset-inline:0;bottom:0;z-index:20;display:flex;gap:6px;justify-content:center;padding:8px 12px calc(env(safe-area-inset-bottom,0px) + 8px);background:color-mix(in srgb,var(--a-card) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--a-line)}
+.nav button{flex:1;max-width:220px;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 4px;font-size:11.5px;font-weight:600;background:transparent;color:var(--a-muted);border-radius:14px;filter:none}
+.nav button svg{width:22px;height:22px;margin:0}
+.nav button.on{color:var(--a-accent);background:var(--a-glow)}
+/* manual form extras */
+.cell-on{background:color-mix(in srgb,var(--a-z2) 55%,transparent);font-weight:700}
+.tbl{overflow-x:auto;margin:6px 0;border-radius:12px} table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{border-bottom:1px solid var(--a-line);padding:6px 8px;text-align:right;vertical-align:top} thead th{color:var(--a-muted);font-weight:600}
 table.cmp td,table.cmp th{min-width:84px}
-#savebar{margin-bottom:14px}#savebar button{width:100%}
-.muted{color:var(--muted)} .small{font-size:12px} .err{color:var(--above)}
-button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* favorites */
+.favtop{display:flex;gap:8px;align-items:center;margin:10px 0}
+.fav{border:1px solid var(--a-line);border-radius:18px;padding:14px;margin:12px 0;background:var(--a-bg2);transition:border-color .2s}
+.fav.gone{border-style:dashed;opacity:.92}
+.fav h3{margin:2px 0;line-height:1.5}
+.selrow{flex-direction:row;align-items:center;gap:6px;float:left;font-size:12px;color:var(--a-muted)} .selrow input{flex:none;width:18px;height:18px;padding:0;accent-color:var(--a-accent)}
+.fbtn{margin-top:10px;flex-wrap:wrap} .fbtn button{flex:1;min-height:40px;padding:8px}
+.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:color-mix(in srgb,var(--a-z3) 55%,transparent)}
+.badge.gone{display:block;border-radius:12px;padding:8px 12px}
+.st-called,.st-visited{background:color-mix(in srgb,var(--a-z2) 55%,transparent)} .st-negotiating{background:color-mix(in srgb,var(--a-z3) 70%,transparent)}
+.st-bought{background:color-mix(in srgb,var(--a-z1) 80%,transparent)} .st-rejected{background:color-mix(in srgb,var(--a-line) 90%,transparent);color:var(--a-muted)}
+.infosum{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:6px 0 2px;font-size:12.5px;color:var(--a-muted)}
+.stars{color:#e0a516;letter-spacing:1px;font-size:14px}
+.up{color:var(--a-above)} .down{color:var(--a-below)}
+details.info{border:1px solid var(--a-line);border-radius:14px;padding:10px 12px;margin-top:10px;background:var(--a-card)}
+.xrow{display:flex;gap:6px;margin:6px 0} .xrow input{direction:rtl} .xrow input:first-child{flex:.8} .xrow button{flex:none;min-height:40px;width:40px;padding:0;background:transparent;color:var(--a-above);border:1px solid var(--a-line)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chips button{min-height:32px;padding:3px 11px;font-size:12px;font-weight:500;border-radius:999px;background:transparent;color:var(--a-accent);border:1px dashed var(--a-accent)}
+.note-text{white-space:pre-wrap;font-size:13px;margin:4px 0}
+#toast{position:fixed;inset-inline:0;bottom:calc(env(safe-area-inset-bottom,0px) + 84px);margin:0 auto;width:max-content;max-width:86%;padding:8px 16px;border-radius:999px;background:var(--a-ink);color:var(--a-bg);font-size:13px;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:30}
+#toast.show{opacity:.94;transform:none}
+@media (min-width:700px){body{padding-top:24px}}
 </style>
 </head>
 <body>
-<h1>قیمت منصفانه ملک</h1>
-<nav class="tabs"><button data-tab="link" class="on">تحلیل لینک</button><button data-tab="manual">تخمین دستی</button><button data-tab="fav">⭐ علاقه‌مندی‌ها</button></nav>
+<header class="top">
+  <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M9 19.5v-5h6v5"/></svg></div>
+  <div class="grow"><h1>قیمت منصفانه</h1><p>ملک را با آمار بسنجید</p></div>
+  <button id="theme" aria-label="تغییر تم" title="تم"></button>
+</header>
 <section data-pane="link">
 <div class="box">
   <div class="row"><input id="link" placeholder="لینک آگهی دیوار را اینجا بگذارید" inputmode="url"><button id="go">تحلیل</button></div>
-  <div class="row" style="margin-top:8px"><button class="ghost" id="paste">چسباندن از کلیپ‌بورد</button></div>
+  <div class="row" style="margin-top:8px"><button class="ghost" id="paste" style="width:100%">چسباندن از کلیپ‌بورد</button></div>
   <p class="muted small">یا در اپ دیوار روی «اشتراک‌گذاری» آگهی بزنید و «قیمت منصفانه» را انتخاب کنید.</p>
 </div>
 <div id="savebar" hidden><button id="savebtn" class="ghost">⭐ ذخیره در علاقه‌مندی‌ها</button><p class="muted small" id="savemsg"></p></div>
@@ -104,13 +154,24 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 <section data-pane="fav" hidden>
 <div class="box">
   <h2>آگهی‌های مورد علاقه</h2>
-  <p class="muted small">هر آگهی با قیمت و مشخصاتش ذخیره می‌شود؛ با «بروزرسانی» تغییر قیمت ثبت می‌شود و اگر آگهی از دیوار حذف شود، آخرین اطلاعاتش می‌ماند. دو آگهی را با تیک «مقایسه» انتخاب کنید.</p>
+  <p class="muted small">هر آگهی با قیمت و مشخصاتش ذخیره می‌شود؛ با «بروزرسانی» تغییر قیمت ثبت می‌شود و اگر آگهی از دیوار حذف شود، آخرین اطلاعاتش می‌ماند. برای هر آگهی می‌توانید یادداشت، آدرس و ریز مشخصات اضافه کنید. دو آگهی را با تیک «مقایسه» انتخاب کنید.</p>
+  <div class="favtop"><input id="fav-q" type="search" placeholder="جست‌وجو در عنوان، آدرس و یادداشت…" style="direction:rtl"></div>
   <div id="favtools" hidden><button class="ghost" id="favall" style="width:100%">بروزرسانی همه آگهی‌ها</button></div>
   <p class="muted small" id="favmsg"></p>
   <div id="favlist"></div>
+  <details><summary>پشتیبان‌گیری از علاقه‌مندی‌ها و یادداشت‌ها</summary>
+    <p class="muted small">اطلاعات فقط روی همین گوشی ذخیره می‌شود. با «کپی پشتیبان» همه‌چیز در کلیپ‌بورد کپی می‌شود (جایی مثل یادداشت‌ها یا پیام‌های ذخیره‌شده بچسبانید). با «بازیابی» از کلیپ‌بورد برمی‌گردد و با موارد فعلی ادغام می‌شود.</p>
+    <div class="row"><button class="ghost" id="fav-export">کپی پشتیبان</button><button class="ghost" id="fav-import">بازیابی از کلیپ‌بورد</button></div>
+    <p class="muted small" id="fav-bkmsg"></p>
+  </details>
 </div>
 <div class="box" id="favcmp"></div>
 </section>
+<nav class="nav" aria-label="بخش‌ها">
+  <button data-tab="link" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>تحلیل لینک</span></button>
+  <button data-tab="manual"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h3M13 12h3M8 16h3M13 16h3"/></svg><span>تخمین دستی</span></button>
+  <button data-tab="fav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.5 2.7 5.5 6 .9-4.4 4.2 1 6-5.3-2.8-5.3 2.8 1-6L3.3 9.9l6-.9z"/></svg><span>علاقه‌مندی‌ها</span></button>
+</nav>
 <script src="neighborhoods.js"></script><script src="data.js"></script><script src="coef.js"></script>
 <script src="hist.js"></script><script src="rent.js"></script><script src="com.js"></script><script src="iran.js"></script><script src="core.js"></script><script src="app.js"></script><script src="app-main.js"></script><script src="tabs.js"></script>
 </body>

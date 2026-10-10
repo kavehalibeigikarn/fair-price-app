@@ -192,8 +192,11 @@ function initManual() {
     SUBS.save(SUBS.load().filter(x => x.id !== sub.id)); refreshHoods(slug); live();
   };
   g("m-go").onclick = () => runManual(true);
-  new MutationObserver(() => g("mreport").querySelectorAll('select[data-q="street"],select[data-q="npark"]').forEach(s => { const l = s.closest("label"); if (l) l.style.display = "none"; }))
-    .observe(g("mreport"), { childList: true });
+  const qText = () => { const qn = (QUAL.find(x => x[0] === g("m-qual").value) || [])[1], an = (ALLEY.find(x => x[0] === g("m-alley").value) || [])[1]; return "کیفیت محله " + (qn || "متوسط") + "، کوچه " + (an || "متوسط"); };
+  new MutationObserver(() => {
+    g("mreport").querySelectorAll('select[data-q="street"],select[data-q="npark"]').forEach(s => { const l = s.closest("label"); if (l) l.style.display = "none"; });
+    g("mreport").querySelectorAll("p.small").forEach(p => { if (p.textContent.includes("موقعیت undefined")) p.textContent = p.textContent.replace("موقعیت undefined", qText()); });   // label of the custom quality key
+  }).observe(g("mreport"), { childList: true });
   refreshCities(); refreshHoods(""); syncParking();
   g("m-sale-price").hidden = false; g("m-rent-price").hidden = true;
 }
@@ -269,10 +272,53 @@ function spark(vals, rent) {
   const pts = vals.map((v, i) => [10 + i * (W - 20) / (vals.length - 1), 8 + (H - 16) * (1 - (v - mn) / sp)]);
   return `<svg viewBox="0 0 ${W} ${H + 14}" role="img" aria-label="روند قیمت"><polyline points="${pts.map(p => p.join(",")).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
     ${pts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--accent)"/>`).join("")}
-    <text x="10" y="${H + 11}" font-size="10" fill="var(--muted)">${fmtPrice(vals[0], rent)}</text><text x="${W - 10}" y="${H + 11}" font-size="10" fill="var(--muted)" text-anchor="end">${fmtPrice(vals[vals.length - 1], rent)}</text></svg>`;
+    <text x="10" y="${H + 11}" font-size="10" fill="var(--muted)" text-anchor="end">${fmtPrice(vals[0], rent)}</text><text x="${W - 10}" y="${H + 11}" font-size="10" fill="var(--muted)" text-anchor="start">${fmtPrice(vals[vals.length - 1], rent)}</text></svg>`;
 }
 const pctTxt = p => (p > 0.0005 ? "+" : p < -0.0005 ? "−" : "") + Math.abs(p * 100).toLocaleString("fa-IR", { maximumFractionDigits: 1 }) + "٪";
 const pctCls = (p, rent) => Math.abs(p) < 0.005 ? "" : p > 0 ? "up" : "down";
+
+// ---------- notes & extra info per favorite
+const STATUS = [["", "بدون وضعیت"], ["called", "تماس گرفتم"], ["visited", "بازدید شد"], ["negotiating", "در حال مذاکره"], ["rejected", "رد شد"], ["bought", "نهایی شد"]];
+const statusName = v => (STATUS.find(x => x[0] === v) || [])[1] || "";
+const XKEYS = ["تعداد خواب", "جهت ساختمان", "نما", "کف‌پوش", "گرمایش و سرمایش", "وضعیت تخلیه", "تاریخ بازدید", "قیمت توافقی", "نام مشاور / مالک"];
+const starTxt = n => n > 0 ? "★".repeat(n) + "☆".repeat(5 - n) : "";
+const OPENINFO = new Set();
+function infoBlock(f) {                                   // summary line + note preview shown on the card
+  const i = f.info || {}, bits = [];
+  if (i.status) bits.push(`<span class="badge st-${esc(i.status)}">${esc(statusName(i.status))}</span>`);
+  if (i.rating > 0) bits.push(`<span class="stars">${starTxt(+i.rating)}</span>`);
+  if (i.address) bits.push(`<span>📍 ${esc(i.address)}</span>`);
+  if (i.contact) bits.push(`<span>☎ ${esc(i.contact)}</span>`);
+  const ex = (i.extra || []).filter(x => x.k || x.v).map(x => `<span>${esc(x.k)}${x.k && x.v ? ": " : ""}${esc(x.v)}</span>`);
+  const note = i.note && i.note.trim() ? `<p class="note-text">${esc(i.note.trim().length > 160 ? i.note.trim().slice(0, 160) + "…" : i.note.trim())}</p>` : "";
+  return (bits.length || ex.length ? `<div class="infosum">${bits.concat(ex).join("")}</div>` : "") + note;
+}
+function infoPanel(f) {
+  const i = f.info || {}, ex = i.extra || [];
+  return `<details class="info"${OPENINFO.has(f.token) ? " open" : ""}><summary>📝 یادداشت و اطلاعات تکمیلی</summary>
+    <div class="f2">
+      <label>وضعیت پیگیری<select data-i="status">${opts(STATUS, i.status || "")}</select></label>
+      <label>امتیاز من<select data-i="rating">${opts([["", "بدون امتیاز"], [1, "★"], [2, "★★"], [3, "★★★"], [4, "★★★★"], [5, "★★★★★"]], i.rating || "")}</select></label>
+      <label class="wide">آدرس<input data-i="address" dir="auto" value="${esc(i.address)}" placeholder="خیابان، کوچه، پلاک…"></label>
+      <label class="wide">تماس (مالک / مشاور / تلفن)<input data-i="contact" dir="auto" value="${esc(i.contact)}"></label>
+      <label class="wide">یادداشت<textarea data-i="note" rows="4" placeholder="نکته‌ها، نقاط قوت و ضعف، حرف‌های مالک…">${esc(i.note)}</textarea></label>
+    </div>
+    <p class="small" style="margin:8px 0 0"><b>ریز مشخصات</b> <span class="muted">(هر چیزی که می‌خواهید کنار این آگهی داشته باشید)</span></p>
+    ${ex.map((x, n) => `<div class="xrow"><input data-x="k" dir="auto" value="${esc(x.k)}" placeholder="عنوان"><input data-x="v" dir="auto" value="${esc(x.v)}" placeholder="مقدار"><button data-act="xdel" data-n="${n}" aria-label="حذف">×</button></div>`).join("")}
+    <div class="chips">${XKEYS.filter(k => !ex.some(x => x.k === k)).map(k => `<button data-act="xadd" data-k="${esc(k)}">+ ${esc(k)}</button>`).join("")}<button data-act="xadd" data-k="">+ مورد دلخواه</button></div>
+  </details>`;
+}
+function collectInfo(card, f) {                           // DOM -> f.info (empty extra rows are kept so row indexes stay aligned)
+  const i = f.info = f.info || {};
+  card.querySelectorAll("[data-i]").forEach(el => { const k = el.dataset.i; i[k] = k === "rating" ? (+el.value || 0) : k === "note" ? el.value : el.value.trim(); });
+  i.extra = Array.from(card.querySelectorAll(".xrow")).map(r => ({ k: r.querySelector('[data-x="k"]').value.trim(), v: r.querySelector('[data-x="v"]').value.trim() }));
+  f.infoT = Date.now();
+}
+function saveInfo(card) {
+  const favs = FAV.load(), f = favByToken(favs, card.dataset.token); if (!f) return;
+  collectInfo(card, f); FAV.save(favs);
+  const blk = card.querySelector(".infoblock"); if (blk) blk.innerHTML = infoBlock(f);
+}
 
 function favCard(f) {
   const ad = f.ad, rent = isRentAd(ad), L = f.snaps[f.snaps.length - 1] || {}, F0 = f.snaps[0] || {};
@@ -286,6 +332,7 @@ function favCard(f) {
   return `<div class="fav${f.gone ? " gone" : ""}" data-token="${esc(f.token)}">
     <label class="selrow"><input type="checkbox" data-act="sel" ${FAVSEL.includes(f.token) ? "checked" : ""}> مقایسه</label>
     <h3>${esc(ad.title || "آگهی دیوار")}</h3><p class="muted small">${esc(sub)}</p>
+    <div class="infoblock">${infoBlock(f)}</div>
     ${f.gone ? `<p class="badge gone">آگهی در دیوار حذف/منقضی شده (${jd(f.gone)}) — آخرین اطلاعات ذخیره‌شده نمایش داده می‌شود</p>` : ""}
     ${f.err ? `<p class="small err">${esc(f.err)}</p>` : ""}
     <div class="cards">
@@ -298,6 +345,7 @@ function favCard(f) {
     ${spark(f.snaps.map(s => s.price).filter(v => v > 0), rent)}
     <details><summary>تاریخچه قیمت (${fa(f.snaps.length)} ثبت)</summary>
       <div class="tbl"><table><thead><tr><th>تاریخ</th><th>قیمت</th><th>تغییر</th><th>منصفانه</th></tr></thead><tbody>${hist}</tbody></table></div></details>
+    ${infoPanel(f)}
     <div class="row fbtn"><button class="ghost" data-act="open">تحلیل کامل</button>${f.gone ? "" : `<button class="ghost" data-act="refresh">بروزرسانی</button>`}<button class="ghost" data-act="del">حذف</button></div>
   </div>`;
 }
@@ -311,6 +359,8 @@ function compareHtml(favs) {
   const chg = (L, F0) => L.price > 0 && F0.price > 0 && F0 !== L ? L.price / F0.price - 1 : NaN;
   const vsf = (L, f) => L.price > 0 && f.fair > 0 ? L.price / f.fair - 1 : NaN;
   const dif = (x, y) => x > 0 && y > 0 ? pctTxt(y / x - 1) : "";
+  const ia = A.info || {}, ib = B2.info || {}, xv = (i, k) => ((i.extra || []).find(x => x.k === k && x.v) || {}).v || "—";
+  const xkeys = Array.from(new Set((ia.extra || []).concat(ib.extra || []).filter(x => x.k && x.v).map(x => x.k)));
   const R = [
     ["نوع", typeLabel(a), typeLabel(b), ""],
     ["محل", a.hood || cityName(a.city), b.hood || cityName(b.city), ""],
@@ -322,6 +372,12 @@ function compareHtml(favs) {
     ["ارزش منصفانه", A.fair > 0 ? fmtPrice(A.fair, ra) : "—", B2.fair > 0 ? fmtPrice(B2.fair, rb) : "—", dif(A.fair, B2.fair)],
     ["قیمت نسبت به منصفانه", isNaN(vsf(LA, A)) ? "—" : pctTxt(vsf(LA, A)), isNaN(vsf(LB, B2)) ? "—" : pctTxt(vsf(LB, B2)), ""],
     ["تغییر از اولین ذخیره", isNaN(chg(LA, FA0)) ? "—" : pctTxt(chg(LA, FA0)), isNaN(chg(LB, FB0)) ? "—" : pctTxt(chg(LB, FB0)), ""],
+    ["وضعیت پیگیری", esc(statusName(ia.status) || "—"), esc(statusName(ib.status) || "—"), ""],
+    ["امتیاز من", ia.rating > 0 ? starTxt(+ia.rating) : "—", ib.rating > 0 ? starTxt(+ib.rating) : "—", ""],
+    ["آدرس", esc(ia.address || "—"), esc(ib.address || "—"), ""],
+    ["تماس", esc(ia.contact || "—"), esc(ib.contact || "—"), ""],
+    ...xkeys.map(k => [esc(k), esc(xv(ia, k)), esc(xv(ib, k)), ""]),
+    ["یادداشت", esc((ia.note || "—").slice(0, 140)), esc((ib.note || "—").slice(0, 140)), ""],
     ["ذخیره از", jd(A.savedAt), jd(B2.savedAt), ""],
     ["وضعیت", A.gone ? "حذف‌شده" : "فعال", B2.gone ? "حذف‌شده" : "فعال", ""],
   ];
@@ -335,7 +391,10 @@ function renderFavs() {
   FAVSEL = FAVSEL.filter(t => favByToken(favs, t));
   document.getElementById("favtools").hidden = !favs.length;
   document.getElementById("favmsg").textContent = FAVMSG; FAVMSG = "";
-  el.innerHTML = favs.length ? favs.map(favCard).join("") : `<p class="muted">هنوز آگهی‌ای ذخیره نشده. در تب «تحلیل لینک» یک آگهی را باز کنید و دکمه «ذخیره در علاقه‌مندی‌ها» را بزنید.</p>`;
+  const qv = nq(document.getElementById("fav-q").value);
+  const hay = f => { const i = f.info || {}, a = f.ad || {}; return nq([a.title, a.hood, cityName(a.city), i.address, i.contact, i.note, statusName(i.status)].concat((i.extra || []).map(x => x.k + " " + x.v)).join(" ")); };
+  const shown = qv ? favs.filter(f => hay(f).includes(qv)) : favs;
+  el.innerHTML = shown.length ? shown.map(favCard).join("") : favs.length ? `<p class="muted">موردی پیدا نشد.</p>` : `<p class="muted">هنوز آگهی‌ای ذخیره نشده. در تب «تحلیل لینک» یک آگهی را باز کنید و دکمه «ذخیره در علاقه‌مندی‌ها» را بزنید.</p>`;
   const cm = document.getElementById("favcmp"); cm.innerHTML = compareHtml(favs); cm.hidden = !cm.innerHTML;
 }
 
@@ -358,8 +417,53 @@ async function openFav(token) {
   }
 }
 
+async function clipWrite(t) {
+  const cb = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Clipboard;
+  if (cb) { await cb.write({ string: t }); return true; }
+  if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(t); return true; }
+  return false;
+}
+async function clipRead() {
+  const cb = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Clipboard;
+  return cb ? (await cb.read()).value : await navigator.clipboard.readText();
+}
+function importBackup(text) {                              // clipboard text is untrusted: validate before merging
+  let o; try { o = JSON.parse(text); } catch { return null; }
+  if (!o || o.app !== "fair-price" || !Array.isArray(o.favs)) return null;
+  const cur = FAV.load(); let add = 0, upd = 0;
+  for (const f of o.favs) {
+    if (!f || typeof f.token !== "string" || !/^[A-Za-z0-9_-]{8}$/.test(f.token) || !f.ad || !["sale", "rent", "com"].includes(f.ad.type) || !Array.isArray(f.snaps)) continue;
+    if (f.ad.type === "com" && !DFP_COM[f.ad.comCat]) continue;
+    const c = favByToken(cur, f.token);
+    if (!c) { cur.push(f); add++; continue; }
+    const seen = new Set(c.snaps.map(x => x.t)); f.snaps.forEach(x => { if (!seen.has(x.t)) c.snaps.push(x); }); c.snaps.sort((a, b) => a.t - b.t);
+    if ((f.checked || 0) > (c.checked || 0)) { c.ad = f.ad; c.checked = f.checked; c.fair = f.fair; c.gone = f.gone; }
+    if (f.info && (!c.info || (f.infoT || 0) > (c.infoT || 0))) { c.info = f.info; c.infoT = f.infoT; }
+    upd++;
+  }
+  FAV.save(cur);
+  const subs = SUBS.load(); (Array.isArray(o.subareas) ? o.subareas : []).forEach(x => { if (x && x.id && x.slug && x.name && !subs.some(y => y.id === x.id)) subs.push(x); }); SUBS.save(subs);
+  return { add, upd };
+}
+
 function initFavs() {
   document.getElementById("savebtn").onclick = saveCurrentFav;
+  document.getElementById("fav-q").oninput = renderFavs;
+  const fl = document.getElementById("favlist"); let infoT;
+  fl.addEventListener("input", e => { const card = e.target.closest(".fav"); if (!card || !e.target.closest("details.info")) return; clearTimeout(infoT); infoT = setTimeout(() => saveInfo(card), 350); });
+  fl.addEventListener("change", e => { const card = e.target.closest(".fav"); if (!card || !e.target.closest("details.info")) return; clearTimeout(infoT); saveInfo(card); });
+  fl.addEventListener("toggle", e => { const d = e.target; if (!d.matches || !d.matches("details.info")) return; const t = d.closest(".fav").dataset.token; if (d.open) OPENINFO.add(t); else OPENINFO.delete(t); }, true);
+  document.getElementById("fav-export").onclick = async () => {
+    const msg = document.getElementById("fav-bkmsg"), favs = FAV.load(); if (!favs.length) { msg.textContent = "هنوز چیزی ذخیره نشده."; return; }
+    const txt = JSON.stringify({ app: "fair-price", v: 1, t: Date.now(), favs, subareas: SUBS.load() });
+    try { msg.textContent = (await clipWrite(txt)) ? `پشتیبان ${fa(favs.length)} آگهی کپی شد؛ آن را جایی بچسبانید و نگه دارید.` : "کپی خودکار ممکن نبود."; } catch { msg.textContent = "کپی خودکار ممکن نبود."; }
+  };
+  document.getElementById("fav-import").onclick = async () => {
+    const msg = document.getElementById("fav-bkmsg"); let t = ""; try { t = await clipRead(); } catch {}
+    const r = t ? importBackup(t) : null;
+    if (!r) { msg.textContent = "در کلیپ‌بورد پشتیبان معتبری پیدا نشد. ابتدا متن پشتیبان را کپی کنید."; return; }
+    FAVMSG = `بازیابی شد: ${fa(r.add)} آگهی جدید، ${fa(r.upd)} آگهی ادغام‌شده.`; renderFavs();
+  };
   document.getElementById("favall").onclick = refreshAllFavs;
   document.getElementById("favlist").onclick = async e => {
     const b = e.target.closest("[data-act]"); if (!b) return;
@@ -367,6 +471,14 @@ function initFavs() {
     if (act === "sel") {
       FAVSEL = FAVSEL.filter(t => t !== token); if (b.checked) FAVSEL.push(token); if (FAVSEL.length > 2) FAVSEL.shift();
       return renderFavs();
+    }
+    if (act === "xadd" || act === "xdel") {
+      const favs = FAV.load(), f = favByToken(favs, token); if (!f) return;
+      collectInfo(card, f); f.info.extra = f.info.extra || [];
+      if (act === "xadd") f.info.extra.push({ k: b.dataset.k || "", v: "" }); else f.info.extra.splice(+b.dataset.n, 1);
+      FAV.save(favs); OPENINFO.add(token); renderFavs();
+      if (act === "xadd") { const rows = document.querySelectorAll(`.fav[data-token="${token}"] .xrow`), last = rows[rows.length - 1]; if (last) last.querySelector(b.dataset.k ? '[data-x="v"]' : '[data-x="k"]').focus(); }
+      return;
     }
     if (act === "open") return openFav(token);
     if (act === "del") { if (!confirm("این آگهی از علاقه‌مندی‌ها و تاریخچه‌اش حذف شود؟")) return; FAV.save(FAV.load().filter(f => f.token !== token)); return renderFavs(); }
@@ -379,11 +491,31 @@ function initFavs() {
   };
 }
 
+// ---------- theme: auto (follows the phone) / light / dark
+const THEME_ICON = {
+  auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>',
+  light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/></svg>',
+  dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>' };
+const THEME_NAME = { auto: "خودکار (مطابق گوشی)", light: "روز", dark: "شب" };
+function toast(t) {
+  let el = document.getElementById("toast");
+  if (!el) { el = document.createElement("div"); el.id = "toast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+  el.textContent = t; el.classList.add("show"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 1500);
+}
+function applyTheme(t) {
+  const r = document.documentElement; if (t === "light" || t === "dark") r.setAttribute("data-theme", t); else r.removeAttribute("data-theme");
+  const b = document.getElementById("theme"); b.innerHTML = THEME_ICON[t]; b.setAttribute("aria-label", "تم: " + THEME_NAME[t]); b.title = "تم: " + THEME_NAME[t];
+}
+function initTheme() {
+  let t = store.get("theme", "auto"); if (!THEME_ICON[t]) t = "auto"; applyTheme(t);
+  document.getElementById("theme").onclick = () => { t = t === "auto" ? "light" : t === "light" ? "dark" : "auto"; store.set("theme", t); applyTheme(t); toast("تم: " + THEME_NAME[t]); };
+}
+
 // ---------- boot
 window.addEventListener("DOMContentLoaded", () => {
   PANE.link.root = document.getElementById("report"); PANE.manual.root = document.getElementById("mreport");
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => showTab(b.dataset.tab));
-  initManual(); initFavs();
+  initTheme(); initManual(); initFavs();
   const _analyzeToken = analyzeToken;
   analyzeToken = async function (t) { await _analyzeToken(t); PANE.link.AD = AD; PANE.link.TOKEN = TOKEN; updateSaveBar(); document.getElementById("savemsg").textContent = ""; };
   new MutationObserver(updateSaveBar).observe(PANE.link.root, { childList: true });
